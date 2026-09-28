@@ -185,6 +185,14 @@ def _log(source: str, user: str, start: float) -> None:
     print(f"[llm] {source:<5}  {snippet:<60}  {time.monotonic() - start:.1f}s", flush=True)
 
 
+_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+
+def render(template: str, **values) -> str:
+    """Fill {name} placeholders in one pass, leaving literal JSON braces in the prompt untouched."""
+    return _PLACEHOLDER.sub(lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), template)
+
+
 def llm_json(system: str, user: str, *, max_completion_tokens: int = 1200) -> dict:
     """Ask the LLM for a JSON object. Cached on disk; rate-limited; retried; JSON-repaired."""
     start = time.monotonic()
