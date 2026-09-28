@@ -1,0 +1,9 @@
+{
+  "vendor": "Lumora Cloud",
+  "plans": {
+    "starter":    {"display": "Starter",    "sso": false, "audit_log_export": false, "api_rate_limit_per_min": 100,   "data_retention_days": 30,  "support_sla": "48h", "dedicated_csm": false},
+    "growth":     {"display": "Growth",     "sso": false, "audit_log_export": false, "api_rate_limit_per_min": 1000,  "data_retention_days": 180, "support_sla": "24h", "dedicated_csm": false},
+    "enterprise": {"display": "Enterprise", "sso": true,  "audit_log_export": true,  "api_rate_limit_per_min": 10000, "data_retention_days": 730, "support_sla": "4h",  "dedicated_csm": true}
+  },
+  "regions": {"ap-south-1": "Mumbai", "ap-south-2": "Hyderabad", "eu-west-1": "Ireland", "us-east-1": "N. Virginia"}
+}
