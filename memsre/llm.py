@@ -36,6 +36,7 @@ _clients: dict[str, OpenAI] = {}
 _usage: dict[str, deque] = {}        # key -> deque[(monotonic time, estimated tokens)]
 _last_call: dict[str, float] = {}    # key -> monotonic time of the last call
 _dropped_params: set[str] = set()    # params the API rejected; remembered for the process
+_cooldown: dict[str, float] = {}     # key -> monotonic time until which a 429 says it is rate-limited
 _next_key = 0
 
 
@@ -55,14 +56,20 @@ def _save_cache() -> None:
     os.replace(tmp, CACHE_FILE)
 
 
-def _pick_key() -> str:
+def _pick_key(exclude: str | None = None) -> str:
+    """Round-robin over the keys, skipping any that a 429 has put in cooldown."""
     global _next_key
     with _lock:
-        if not config.GROQ_KEYS:
+        keys = config.GROQ_KEYS
+        if not keys:
             raise LLMError("No Groq API key configured. Set GROQ_API_KEY (or GROQ_API_KEYS) in .env.")
-        key = config.GROQ_KEYS[_next_key % len(config.GROQ_KEYS)]
-        _next_key += 1
-        return key
+        now = time.monotonic()
+        for _ in range(len(keys)):
+            key = keys[_next_key % len(keys)]
+            _next_key += 1
+            if key != exclude and _cooldown.get(key, 0.0) <= now:
+                return key
+        return min(keys, key=lambda k: _cooldown.get(k, 0.0))   # all cooling down: the one free soonest
 
 
 def _client(key: str) -> OpenAI:
@@ -164,6 +171,16 @@ def _complete(system: str, user: str, max_completion_tokens: int) -> str:
             raise LLMError(f"Groq call failed after {_MAX_ATTEMPTS} attempts ({reason}).")
         if delay is None:
             delay = 5 * 2 ** (attempt - 1)
+        if reason.startswith("HTTP 429") and len(config.GROQ_KEYS) > 1:
+            # With several keys, a rate-limited key cools down while another key takes the retry.
+            with _lock:
+                _cooldown[key] = time.monotonic() + delay
+            key = _pick_key(exclude=key)
+            client = _client(key)
+            delay = max(0.0, _cooldown.get(key, 0.0) - time.monotonic())
+            if delay == 0:
+                print(f"[llm] {reason}; switching to another Groq key", flush=True)
+                continue
         print(f"[llm] {reason}; retry {attempt}/{_MAX_ATTEMPTS - 1} in {delay:.0f}s", flush=True)
         time.sleep(delay)
 

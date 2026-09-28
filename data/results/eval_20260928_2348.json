@@ -1,0 +1,244 @@
+{
+  "before_accuracy": 60.0,
+  "after_accuracy": 100.0,
+  "n": 20,
+  "questions": [
+    {
+      "id": "Q01",
+      "customer": "kestrel",
+      "question": "Can Kestrel Logistics export audit logs?",
+      "defect": "resolution",
+      "before_correct": false,
+      "before_short": "yes",
+      "after_correct": true,
+      "after_short": "no",
+      "fixed_by": "INC-001"
+    },
+    {
+      "id": "Q02",
+      "customer": "kestrel",
+      "question": "Which Lumora plan is Kestrel Logistics on right now?",
+      "defect": "resolution",
+      "before_correct": false,
+      "before_short": "enterprise",
+      "after_correct": true,
+      "after_short": "growth",
+      "fixed_by": "INC-001"
+    },
+    {
+      "id": "Q03",
+      "customer": "kestrel",
+      "question": "What is Kestrel Logistics' API rate limit?",
+      "defect": "resolution",
+      "before_correct": false,
+      "before_short": "10000",
+      "after_correct": true,
+      "after_short": "1000",
+      "fixed_by": "INC-001"
+    },
+    {
+      "id": "Q04",
+      "customer": "kestrel",
+      "question": "Does Kestrel Logistics have a dedicated customer success manager?",
+      "defect": "resolution",
+      "before_correct": false,
+      "before_short": "unknown",
+      "after_correct": true,
+      "after_short": "no",
+      "fixed_by": "INC-001"
+    },
+    {
+      "id": "Q05",
+      "customer": "saffron",
+      "question": "Can Saffron Retail enable SSO?",
+      "defect": "resolution",
+      "before_correct": false,
+      "before_short": "no",
+      "after_correct": true,
+      "after_short": "yes",
+      "fixed_by": "INC-002"
+    },
+    {
+      "id": "Q06",
+      "customer": "saffron",
+      "question": "Which Lumora plan is Saffron Retail on right now?",
+      "defect": "resolution",
+      "before_correct": false,
+      "before_short": "growth",
+      "after_correct": true,
+      "after_short": "enterprise",
+      "fixed_by": "INC-002"
+    },
+    {
+      "id": "Q07",
+      "customer": "saffron",
+      "question": "How long is Saffron Retail's data retained?",
+      "defect": "resolution",
+      "before_correct": false,
+      "before_short": "180",
+      "after_correct": true,
+      "after_short": "730",
+      "fixed_by": "INC-002"
+    },
+    {
+      "id": "Q08",
+      "customer": "saffron",
+      "question": "What support response SLA does Saffron Retail get?",
+      "defect": "resolution",
+      "before_correct": false,
+      "before_short": "24h",
+      "after_correct": true,
+      "after_short": "4h",
+      "fixed_by": "INC-002"
+    },
+    {
+      "id": "Q09",
+      "customer": "pinecrest",
+      "question": "Which AWS region hosts Pinecrest Hospitals' workspace?",
+      "defect": "freshness_candidate",
+      "before_correct": true,
+      "before_short": "ap-south-2",
+      "after_correct": true,
+      "after_short": "ap-south-2",
+      "fixed_by": null
+    },
+    {
+      "id": "Q10",
+      "customer": "pinecrest",
+      "question": "Is Pinecrest Hospitals' workspace still hosted in Mumbai?",
+      "defect": "freshness_candidate",
+      "before_correct": true,
+      "before_short": "no",
+      "after_correct": true,
+      "after_short": "no",
+      "fixed_by": null
+    },
+    {
+      "id": "Q11",
+      "customer": "pinecrest",
+      "question": "Can Pinecrest Hospitals export audit logs?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "yes",
+      "after_correct": true,
+      "after_short": "yes",
+      "fixed_by": null
+    },
+    {
+      "id": "Q12",
+      "customer": "quartz",
+      "question": "Which Lumora plan is Quartz Mobility on?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "starter",
+      "after_correct": true,
+      "after_short": "starter",
+      "fixed_by": null
+    },
+    {
+      "id": "Q13",
+      "customer": "quartz",
+      "question": "What is Quartz Mobility's API rate limit?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "100",
+      "after_correct": true,
+      "after_short": "100",
+      "fixed_by": null
+    },
+    {
+      "id": "Q14",
+      "customer": "quartz",
+      "question": "Can Quartz Mobility use SSO?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "no",
+      "after_correct": true,
+      "after_short": "no",
+      "fixed_by": null
+    },
+    {
+      "id": "Q15",
+      "customer": "vanadium",
+      "question": "Which AWS region hosts Vanadium Energy's workspace?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "eu-west-1",
+      "after_correct": true,
+      "after_short": "eu-west-1",
+      "fixed_by": null
+    },
+    {
+      "id": "Q16",
+      "customer": "vanadium",
+      "question": "Does Vanadium Energy have a dedicated customer success manager?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "yes",
+      "after_correct": true,
+      "after_short": "yes",
+      "fixed_by": null
+    },
+    {
+      "id": "Q17",
+      "customer": "vanadium",
+      "question": "How long is Vanadium Energy's data retained?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "730",
+      "after_correct": true,
+      "after_short": "730",
+      "fixed_by": null
+    },
+    {
+      "id": "Q18",
+      "customer": "tidewater",
+      "question": "Which Lumora plan is Tidewater Foods on?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "growth",
+      "after_correct": true,
+      "after_short": "growth",
+      "fixed_by": null
+    },
+    {
+      "id": "Q19",
+      "customer": "tidewater",
+      "question": "Can Tidewater Foods export audit logs?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "no",
+      "after_correct": true,
+      "after_short": "no",
+      "fixed_by": null
+    },
+    {
+      "id": "Q20",
+      "customer": "tidewater",
+      "question": "What support response SLA does Tidewater Foods get?",
+      "defect": "none",
+      "before_correct": true,
+      "before_short": "24h",
+      "after_correct": true,
+      "after_short": "24h",
+      "fixed_by": null
+    }
+  ],
+  "incidents": [
+    {
+      "id": "INC-001",
+      "failure_type": "RESOLUTION",
+      "customer": "kestrel",
+      "answers_fixed": 4
+    },
+    {
+      "id": "INC-002",
+      "failure_type": "RESOLUTION",
+      "customer": "saffron",
+      "answers_fixed": 4
+    }
+  ],
+  "by_type": {
+    "RESOLUTION": 2
+  }
+}
