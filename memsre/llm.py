@@ -23,6 +23,7 @@ _MIN_INTERVAL_S = 2.1
 _WINDOW_S = 60.0
 _NOT_JSON_NOTE = "\n\nYour previous reply was not valid JSON. Return ONLY the JSON object."
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
+_LIMIT_KIND = re.compile(r"(tokens|requests) per (minute|day) \(\w+\): Limit \d+, Used \d+, Requested \d+")
 
 
 class LLMError(RuntimeError):
@@ -153,6 +154,8 @@ def _complete(system: str, user: str, max_completion_tokens: int) -> str:
             if e.status_code != 429 and e.status_code < 500:
                 raise LLMError(f"Groq API error ({e.status_code}): {_error_text(e)[:300]}") from e
             reason, delay = f"HTTP {e.status_code}", _retry_after(e)
+            if m := _LIMIT_KIND.search(_error_text(e)):   # e.g. "tokens per day (TPD): Limit 200000, Used ..."
+                reason += f" ({m.group(0)})"
         except APIConnectionError as e:  # includes APITimeoutError
             reason, delay = type(e).__name__, None
 

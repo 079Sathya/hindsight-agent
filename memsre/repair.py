@@ -28,8 +28,28 @@ def _retain_doc(content: str, document_id: str, tags: list[str], context: str) -
     return {"kind": "retain_doc", "bank": MAIN, "document_id": document_id}
 
 
+def _reverse(actions: list[dict]) -> list[dict]:
+    """Undo actions in reverse order. Returns (in original order) any that could not be undone."""
+    failed = []
+    for action in reversed(actions):
+        try:
+            if action["kind"] == "invalidate":
+                hs.restore(action["bank"], action["memory_id"])
+            elif action["kind"] == "alias":
+                store.unlink(action["a"], action["b"])
+            elif action["kind"] == "retain_doc":
+                hs.delete_document(action["bank"], action["document_id"])
+        except Exception as e:
+            print(f"[repair] could not undo {action}: {e}", flush=True)
+            failed.insert(0, action)
+    return failed
+
+
 def link_identities(key_a, key_b, evidence, incident_id) -> list[dict]:
-    """Link two customer keys locally and record the link in Hindsight. Returns the actions taken."""
+    """Link two customer keys locally and record the link in Hindsight. Returns the actions taken
+    ([] if the pair is already linked, so undoing this incident cannot break the existing link)."""
+    if key_b in store.get_alias_keys(key_a):
+        return []
     name_a, name_b = catalog.customer_name(key_a), catalog.customer_name(key_b)
     store.link(key_a, key_b)
     try:
@@ -81,11 +101,15 @@ def apply_fix(incident_id: str) -> dict:
                 for m in culprits:
                     actions.append(_invalidate(m.id, f"Memory SRE {iid}: superseded by newer evidence"))
     except Exception:
-        inc["applied_actions"] = actions   # keep what did happen, so it can still be undone
+        # Roll back what did happen; anything that could not be rolled back stays recorded for undo_fix.
+        inc["applied_actions"] = _reverse(actions)
         store.update_incident(inc)
         raise
 
-    hs.wait_for_idle(MAIN, 30)
+    try:
+        hs.wait_for_idle(MAIN, 30)
+    except Exception as e:  # T7: waiting is best-effort
+        print(f"[repair] wait_for_idle failed, continuing: {e}", flush=True)
     inc["applied_actions"] = actions
     inc["status"] = "fixed"
     inc["reask"] = None   # any earlier re-ask predates this fix
@@ -101,15 +125,13 @@ def apply_fix(incident_id: str) -> dict:
 def undo_fix(incident_id: str) -> dict:
     """Reverse applied_actions in reverse order. Returns the updated incident."""
     inc = _get(incident_id)
-    if inc["status"] != "fixed":
+    if inc["status"] != "fixed" and not inc["applied_actions"]:
         raise ValueError(f"Incident {incident_id} is '{inc['status']}'; only a fixed incident can be undone")
-    for action in reversed(inc["applied_actions"]):
-        if action["kind"] == "invalidate":
-            hs.restore(action["bank"], action["memory_id"])
-        elif action["kind"] == "alias":
-            store.unlink(action["a"], action["b"])
-        elif action["kind"] == "retain_doc":
-            hs.delete_document(action["bank"], action["document_id"])
+    failed = _reverse(inc["applied_actions"])
+    if failed:
+        inc["applied_actions"] = failed
+        store.update_incident(inc)
+        raise RuntimeError(f"Undo incomplete for {incident_id}: {len(failed)} action(s) could not be reversed; try again")
     inc["applied_actions"] = []
     inc["status"] = "reverted"
     inc["reask"] = None

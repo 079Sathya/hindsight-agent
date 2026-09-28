@@ -115,8 +115,22 @@ def _to_mem(r) -> Mem:
 
 
 def reset_bank(bank_id: str, name: str, retain_mission: str) -> None:
-    """Delete the bank (ignoring 404), then create it fresh."""
-    _rest("DELETE", bank_id, ignore_404=True)
+    """Empty the bank in place (every document, then any remaining memories), then create/update its profile.
+
+    Deliberately not "delete the bank, then create it": after Hindsight Cloud deletes and re-creates a bank
+    under the same id, some of its servers keep answering recall from the deleted bank (measured: 6 of 10
+    identical recalls returned only the old bank's memories, 30+ minutes later). Emptying in place keeps
+    the bank's identity, so recall stays consistent across reseeds."""
+    doc_ids: list[str] = []
+    while True:
+        page = _rest("GET", bank_id, "/documents", params={"limit": 100, "offset": len(doc_ids)}, ignore_404=True)
+        items = (page or {}).get("items") or []
+        doc_ids += [d["id"] for d in items]
+        if not items or len(doc_ids) >= (page or {}).get("total", 0):
+            break
+    for doc_id in doc_ids:
+        delete_document(bank_id, doc_id)
+    _rest("DELETE", bank_id, "/memories", ignore_404=True)
     _with_retry(client().create_bank, bank_id=bank_id, name=name, retain_mission=retain_mission)
 
 
@@ -167,6 +181,29 @@ def list_memories(bank_id, type=None, q=None, state=None, limit=100) -> list[dic
 def list_tags(bank_id, q) -> list[str]:
     data = _rest("GET", bank_id, "/tags", params={"q": q})
     return [i["tag"] for i in (data or {}).get("items") or []]
+
+
+def wait_for_consistent_recall(bank_id, timeout_s=180, probes=5) -> bool:
+    """After bulk writes, some Hindsight servers briefly answer recall from stale data (deleted memories, or
+    none). Poll until `probes` recalls in a row return only memories that exist in the bank. True if settled."""
+    live: set[str] = set()
+    for state in ("valid", "invalidated"):
+        offset = 0
+        while True:
+            page = _rest("GET", bank_id, "/memories/list", params={"state": state, "limit": 100, "offset": offset}) or {}
+            live |= {i["id"] for i in page.get("items") or []}
+            offset += 100
+            if offset >= page.get("total", 0):
+                break
+    deadline, ok = time.monotonic() + timeout_s, 0
+    while ok < probes:
+        ids = {m.id for m in recall(bank_id, "customer plan contact region", max_tokens=1000)}
+        ok = ok + 1 if ids and ids <= live else 0
+        if ok < probes:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(1 if ok else 5)
+    return True
 
 
 def wait_for_idle(bank_id, timeout_s=60) -> bool:

@@ -44,6 +44,8 @@ def seed(keep_lessons: bool = False) -> int:
     store.set_tag_names(tag_names)
 
     hs.wait_for_idle(config.MAIN_BANK_ID, 300)
+    if not hs.wait_for_consistent_recall(config.MAIN_BANK_ID, 180):
+        print("warning: recall still returned stale memories after 180 s; continuing", flush=True)
     print(f"SEEDED {len(events)} events", flush=True)
     return len(events)
 

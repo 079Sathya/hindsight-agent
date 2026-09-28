@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 from . import config
@@ -16,15 +17,31 @@ TAG_NAMES_FILE = config.STATE_DIR / "tag_names.json"
 _lock = threading.RLock()
 
 
+def _retry_io(fn):
+    # On Windows, replacing or reading a file that another handle has open briefly raises PermissionError.
+    for attempt in range(20):
+        try:
+            return fn()
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.05)
+
+
 def _write_text(path: Path, text: str) -> None:
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    _retry_io(lambda: os.replace(tmp, path))
+
+
+def _read_text(path: Path) -> str:
+    with _lock:
+        return _retry_io(lambda: path.read_text(encoding="utf-8"))
 
 
 def _read_json(path: Path, default):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(_read_text(path))
     except (FileNotFoundError, json.JSONDecodeError):
         return default
 
@@ -63,6 +80,12 @@ def unlink(a: str, b: str) -> None:
 
 def customer_tags(key: str) -> list[str]:
     return [f"customer:{key}"] + [f"customer:{k}" for k in get_alias_keys(key)]
+
+
+def alias_pairs() -> list[tuple[str, str]]:
+    """Every linked identity pair once, e.g. [("anvaya", "kestrel")]."""
+    data = _read_json(ALIASES_FILE, {})
+    return sorted({tuple(sorted((a, b))) for a, bs in data.items() for b in bs})
 
 
 # --- incidents.json: list of incident dicts, oldest first on disk ---------------------------
@@ -104,7 +127,7 @@ def update_incident(inc: dict) -> None:
 
 def _read_answers() -> list[dict]:
     try:
-        lines = ANSWERS_FILE.read_text(encoding="utf-8").splitlines()
+        lines = _read_text(ANSWERS_FILE).splitlines()
     except FileNotFoundError:
         return []
     return [json.loads(line) for line in lines if line.strip()]
@@ -142,6 +165,11 @@ def get_tag_names() -> dict[str, str]:
 def set_tag_names(names: dict[str, str]) -> None:
     with _lock:
         _write_json(TAG_NAMES_FILE, dict(names))
+
+
+def load_eval_results() -> dict | None:
+    """data/results/eval_latest.json written by scripts/eval.py, or None if it has not run yet."""
+    return _read_json(config.RESULTS_DIR / "eval_latest.json", None)
 
 
 def reset_state() -> None:
