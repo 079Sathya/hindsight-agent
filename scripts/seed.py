@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -16,6 +17,7 @@ MAIN_RETAIN_MISSION = (
     "Keep company and person names exactly as written."
 )
 LESSONS_RETAIN_MISSION = "Extract lessons about how AI agent memory failed: the failure type, the detection signal, and the fix."
+SETTLE_TIMEOUT_S = 1800
 
 
 def seed(keep_lessons: bool = False) -> int:
@@ -44,8 +46,15 @@ def seed(keep_lessons: bool = False) -> int:
     store.set_tag_names(tag_names)
 
     hs.wait_for_idle(config.MAIN_BANK_ID, 300)
-    if not hs.wait_for_consistent_recall(config.MAIN_BANK_ID, 180):
-        print("warning: recall still returned stale memories after 180 s; continuing", flush=True)
+    # Some Hindsight servers keep answering recall from the pre-reset bank for a while (measured: up to ~20 min).
+    print("Waiting for Hindsight recall to return only the new memories...", flush=True)
+    start = time.monotonic()
+    while not hs.wait_for_consistent_recall(config.MAIN_BANK_ID, 60):
+        waited = time.monotonic() - start
+        if waited >= SETTLE_TIMEOUT_S:
+            print(f"warning: recall still returned stale memories after {waited:.0f} s; continuing", flush=True)
+            break
+        print(f"  still settling ({waited:.0f} s)", flush=True)
     print(f"SEEDED {len(events)} events", flush=True)
     return len(events)
 

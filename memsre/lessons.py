@@ -112,6 +112,7 @@ def accept_proposal(p) -> dict:
     }
     incident["applied_actions"] = repair.link_identities(p["a"], p["b"], p["linking_evidence"], incident["id"])
     store.add_incident(incident)
+    repair.wait_until_recall_reflects(p["a"], None)
     try:
         hs.wait_for_idle(MAIN, 30)
         record(incident)

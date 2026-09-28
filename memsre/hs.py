@@ -183,22 +183,24 @@ def list_tags(bank_id, q) -> list[str]:
     return [i["tag"] for i in (data or {}).get("items") or []]
 
 
-def wait_for_consistent_recall(bank_id, timeout_s=180, probes=5) -> bool:
-    """After bulk writes, some Hindsight servers briefly answer recall from stale data (deleted memories, or
-    none). Poll until `probes` recalls in a row return only memories that exist in the bank. True if settled."""
-    live: set[str] = set()
-    for state in ("valid", "invalidated"):
-        offset = 0
-        while True:
-            page = _rest("GET", bank_id, "/memories/list", params={"state": state, "limit": 100, "offset": offset}) or {}
-            live |= {i["id"] for i in page.get("items") or []}
-            offset += 100
-            if offset >= page.get("total", 0):
-                break
+def wait_for_consistent_recall(bank_id, timeout_s=180, probes=5, query="customer plan contact region",
+                               tags=None, expect_ids=()) -> bool:
+    """After writes, some Hindsight servers answer recall from stale data for a while (deleted or invalidated
+    memories, or nothing). Poll until `probes` recalls in a row are non-empty, contain only currently valid
+    memories and include every id in expect_ids. True if settled, False on timeout."""
+    valid: set[str] = set()
+    offset = 0
+    while True:
+        page = _rest("GET", bank_id, "/memories/list", params={"state": "valid", "limit": 100, "offset": offset}) or {}
+        valid |= {i["id"] for i in page.get("items") or []}
+        offset += 100
+        if offset >= page.get("total", 0):
+            break
+    expect = set(expect_ids)
     deadline, ok = time.monotonic() + timeout_s, 0
     while ok < probes:
-        ids = {m.id for m in recall(bank_id, "customer plan contact region", max_tokens=1000)}
-        ok = ok + 1 if ids and ids <= live else 0
+        ids = {m.id for m in recall(bank_id, query, tags=tags)}
+        ok = ok + 1 if ids and ids <= valid and expect <= ids else 0
         if ok < probes:
             if time.monotonic() >= deadline:
                 return False

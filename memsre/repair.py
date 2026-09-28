@@ -45,6 +45,18 @@ def _reverse(actions: list[dict]) -> list[dict]:
     return failed
 
 
+def wait_until_recall_reflects(customer_key: str, question: str | None, expect_ids=()) -> None:
+    """Best-effort: after a repair, wait (up to 90 s) until this customer's recall no longer returns stale data,
+    so an immediate re-ask sees the change. Some Hindsight servers lag behind writes for a minute or two."""
+    query = f"{catalog.customer_name(customer_key)}: {question or 'plan'}"
+    try:
+        if not hs.wait_for_consistent_recall(MAIN, 90, probes=3, query=query,
+                                             tags=store.customer_tags(customer_key), expect_ids=expect_ids):
+            print("[repair] recall still stale after 90 s; continuing", flush=True)
+    except Exception as e:
+        print(f"[repair] recall check failed, continuing: {e}", flush=True)
+
+
 def link_identities(key_a, key_b, evidence, incident_id) -> list[dict]:
     """Link two customer keys locally and record the link in Hindsight. Returns the actions taken
     ([] if the pair is already linked, so undoing this incident cannot break the existing link)."""
@@ -110,6 +122,7 @@ def apply_fix(incident_id: str) -> dict:
         hs.wait_for_idle(MAIN, 30)
     except Exception as e:  # T7: waiting is best-effort
         print(f"[repair] wait_for_idle failed, continuing: {e}", flush=True)
+    wait_until_recall_reflects(key, inc.get("question"))
     inc["applied_actions"] = actions
     inc["status"] = "fixed"
     inc["reask"] = None   # any earlier re-ask predates this fix
@@ -132,6 +145,8 @@ def undo_fix(incident_id: str) -> dict:
         inc["applied_actions"] = failed
         store.update_incident(inc)
         raise RuntimeError(f"Undo incomplete for {incident_id}: {len(failed)} action(s) could not be reversed; try again")
+    restored = [a["memory_id"] for a in inc["applied_actions"] if a["kind"] == "invalidate"]
+    wait_until_recall_reflects(inc["customer_key"], inc.get("question"), expect_ids=restored)
     inc["applied_actions"] = []
     inc["status"] = "reverted"
     inc["reask"] = None

@@ -5,10 +5,11 @@ Everything `app.py` needs is below. The UI should call only these functions and 
 ## Ground rules
 
 - **Imports:** `from memsre import agent, catalog, config, diagnose, lessons, repair, store`.
-- **Everything is synchronous and blocking.** Timings measured on Groq's free tier: `agent.answer` 1–5 s; `diagnose.create_incident` 5–20 s; `repair.apply_fix` 10–40 s; `lessons.proactive_identity_scan` about 15 s. Run each call inside `st.spinner(...)`. The Groq limiter may add waits under load (you'll see `[llm] ...` lines in the terminal).
+- **Everything is synchronous and blocking.** Timings measured on Groq's free tier: `agent.answer` 1–5 s; `diagnose.create_incident` 15–25 s; `repair.apply_fix` 30–90 s; `lessons.proactive_identity_scan` about 15 s. Run each call inside `st.spinner(...)`. The Groq limiter may add waits under load (you'll see `[llm] ...` lines in the terminal).
+- **Repairs wait for Hindsight.** `apply_fix`, `undo_fix` and `accept_proposal` only return once that customer's recall reflects the change (at most 90 s). Some Hindsight Cloud servers lag behind writes, and without this wait an immediate **Re-ask** could read stale memory.
 - **Groq quota.** The free tier allows 200k tokens per day per Groq *organization*. One `scripts/eval.py` run uses about 80k, and a live demo about 15k. With two keys from different Groq accounts in `GROQ_API_KEYS=key1,key2`, a key that hits its limit is skipped automatically.
 - **LLM cache.** Identical prompts are answered from `data/cache/llm_cache.json`, so repeating a demo step on an unchanged bank is instant and free.
-- **Reset** is done in a terminal with `python scripts/seed.py`, which takes about 3–4 minutes, not from the UI [§12 sidebar note].
+- **Reset** is done in a terminal with `python scripts/seed.py`, not from the UI [§12 sidebar note]. It takes about 3–4 minutes, plus up to 30 minutes waiting for Hindsight recall to settle; it prints `still settling` while it waits. Start recording only after it prints `SEEDED 26 events`.
 - **Errors.** Every function raises an exception whose `str(e)` is readable, so wrap each call in `try/except Exception as e: st.error(str(e))` [§12].
   | Exception | When |
   |---|---|
