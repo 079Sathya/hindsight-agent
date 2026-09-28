@@ -26,6 +26,14 @@ Which of these memories support the WRONG answer? A memory supports the wrong an
 Return JSON: {"culprit_ids": ["<id>", "..."], "wrong_claim": "<the wrong claim in one sentence>", "culprit_asserts_current_state": <true if a culprit states a current state that can change over time, such as a plan, region or status>, "reason": "<one sentence>"}
 If no memory supports the wrong answer, return an empty culprit_ids list."""
 
+# Prepended to CULPRIT_USER: the agent derived its wrong claim from memory *plus* the catalog ("signed Enterprise"
+# -> "can export audit logs"). Without the catalog the model often finds no culprit (0 of 3 on the demo incident),
+# so nothing is invalidated and the fix does not change the answer; with it, 3 of 3.
+CULPRIT_CATALOG_PREFIX = """PRODUCT CATALOG (what each plan includes):
+{catalog_text}
+
+"""
+
 EVIDENCE_USER = """CORRECTION FROM THE SUPPORT REP about the customer '{customer_name}': {correction}
 
 CANDIDATE MEMORIES FROM THE WHOLE MEMORY BANK (they may name customers differently):
@@ -189,7 +197,8 @@ def create_incident(ans: AgentAnswer, correction: str, answer_format: str | None
     # 1. Culprit: which used memories support the wrong answer.
     if ans.used_memories:
         c = llm_json(SRE_SYSTEM, render(
-            CULPRIT_USER, question=ans.question, wrong_answer=ans.answer, correction=correction,
+            CULPRIT_CATALOG_PREFIX + CULPRIT_USER, catalog_text=catalog.catalog_text(), question=ans.question,
+            wrong_answer=ans.answer, correction=correction,
             used_memory_lines="\n".join(memory_line(m) for m in ans.used_memories)))
     else:
         c = {"culprit_ids": [], "wrong_claim": ans.answer, "culprit_asserts_current_state": False,
