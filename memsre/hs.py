@@ -119,8 +119,8 @@ def reset_bank(bank_id: str, name: str, retain_mission: str) -> None:
 
     Deliberately not "delete the bank, then create it": after Hindsight Cloud deletes and re-creates a bank
     under the same id, some of its servers keep answering recall from the deleted bank (measured: 6 of 10
-    identical recalls returned only the old bank's memories, 30+ minutes later). Emptying in place keeps
-    the bank's identity, so recall stays consistent across reseeds."""
+    identical recalls returned only the old bank's memories, for about 20 minutes). Emptying in place keeps
+    the bank's identity; the brief lag that remains after bulk writes is handled by wait_for_consistent_recall."""
     doc_ids: list[str] = []
     while True:
         page = _rest("GET", bank_id, "/documents", params={"limit": 100, "offset": len(doc_ids)}, ignore_404=True)

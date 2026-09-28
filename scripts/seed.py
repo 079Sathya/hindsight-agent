@@ -20,6 +20,26 @@ LESSONS_RETAIN_MISSION = "Extract lessons about how AI agent memory failed: the 
 SETTLE_TIMEOUT_S = 1800
 
 
+def wait_until_recall_settled(tag_names: dict[str, str]) -> bool:
+    """Some Hindsight servers keep answering recall from the pre-reset bank for a while (measured: up to ~20 min),
+    and tag-scoped recall can stay stale after untagged recall looks clean. Probe one untagged query plus every
+    customer tag, the way the agent recalls, until all of them return only the new memories."""
+    probes = [("customer plan contact region", None)] + [(f"{name}: plan", [tag]) for tag, name in tag_names.items()]
+    print("Waiting for Hindsight recall to return only the new memories...", flush=True)
+    start = time.monotonic()
+    while True:
+        stale = sum(not hs.wait_for_consistent_recall(config.MAIN_BANK_ID, 15, probes=3, query=q, tags=t)
+                    for q, t in probes)
+        waited = time.monotonic() - start
+        if not stale:
+            print(f"  recall settled ({waited:.0f} s)", flush=True)
+            return True
+        if waited >= SETTLE_TIMEOUT_S:
+            print(f"warning: recall still stale after {waited:.0f} s; continuing", flush=True)
+            return False
+        print(f"  still settling ({waited:.0f} s; {stale} of {len(probes)} probes stale)", flush=True)
+
+
 def seed(keep_lessons: bool = False) -> int:
     """Reset the bank(s), retain every seed event, reset local state. Returns the number of events."""
     config.check()
@@ -46,15 +66,7 @@ def seed(keep_lessons: bool = False) -> int:
     store.set_tag_names(tag_names)
 
     hs.wait_for_idle(config.MAIN_BANK_ID, 300)
-    # Some Hindsight servers keep answering recall from the pre-reset bank for a while (measured: up to ~20 min).
-    print("Waiting for Hindsight recall to return only the new memories...", flush=True)
-    start = time.monotonic()
-    while not hs.wait_for_consistent_recall(config.MAIN_BANK_ID, 60):
-        waited = time.monotonic() - start
-        if waited >= SETTLE_TIMEOUT_S:
-            print(f"warning: recall still returned stale memories after {waited:.0f} s; continuing", flush=True)
-            break
-        print(f"  still settling ({waited:.0f} s)", flush=True)
+    wait_until_recall_settled(tag_names)
     print(f"SEEDED {len(events)} events", flush=True)
     return len(events)
 
