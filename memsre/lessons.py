@@ -26,6 +26,16 @@ def record(incident: dict) -> None:
     )
 
 
+def investigation_guidance(symptom: str) -> dict:
+    """Playbooks, learned rules and rejected patterns for the investigator's case file (filled in Phase 3)."""
+    return {"text": "", "lessons_block": "", "playbook_ids": [], "rule_ids": [], "rejected_values": []}
+
+
+def playbook() -> dict | None:
+    """The living 'Memory SRE Playbook' mental model (filled in Phase 3)."""
+    return None
+
+
 def learned(limit=10) -> list[dict]:
     """Consolidated lessons as [{"text", "proof_count"}]; raw lesson facts if consolidation hasn't run yet."""
     items = hs.list_memories(LESSONS, type="observation", limit=limit)

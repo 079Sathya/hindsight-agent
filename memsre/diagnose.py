@@ -188,8 +188,62 @@ def _ids(value) -> list[str]:
     return [str(v).strip().strip("[]") for v in value]
 
 
+def build_incident(ans: AgentAnswer, correction: str, answer_format: str | None, *, culprits: list[Mem],
+                   wrong_claim: str, asserts_current: bool, culprit_reason: str, supporting: list[Mem],
+                   evidence_reason: str, identity: dict | None) -> dict:
+    """The incident dict (BUILD_PLAN §9.3 schema) from gathered evidence. failure_type always comes from classify()."""
+    key = ans.customer_key
+    name = catalog.customer_name(key)
+    cust_tags = store.customer_tags(key)
+    identity_confirmed = (identity["same_customer"] and identity["confidence"] >= IDENTITY_MIN_CONFIDENCE
+                          if identity else None)
+    failure_type = classify(culprits, supporting, ans.used_memory_ids, cust_tags, identity_confirmed)
+    culprit_ids = [m.id for m in culprits]
+    affected = store.answers_using(culprit_ids) if culprit_ids else []
+    asserts_current = bool(asserts_current and culprits)
+    return {
+        "id": store.next_incident_id(),
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "status": "no_fix" if failure_type in NO_FIX_TYPES else "open",
+        "customer_key": key,
+        "customer_name": name,
+        "question": ans.question,
+        "answer_format": answer_format,
+        "wrong_answer": ans.answer,
+        "wrong_short_answer": ans.short_answer,
+        "correction": correction,
+        "used_memories": [m.to_dict() for m in ans.used_memories],
+        "culprits": [m.to_dict() for m in culprits],
+        "wrong_claim": wrong_claim,
+        "culprit_asserts_current_state": asserts_current,
+        "culprit_reason": culprit_reason,
+        "supporting": [m.to_dict() for m in supporting],
+        "evidence_reason": evidence_reason,
+        "identity": identity,
+        "failure_type": failure_type,
+        "root_cause": root_cause_text(failure_type, name, identity),
+        "blast_radius": {"answers_affected": len(affected), "answer_ids": [r["answer_id"] for r in affected]},
+        "recommended_fix": recommended_fix(failure_type, name, culprits, supporting, identity, asserts_current),
+        "applied_actions": [],
+        "reask": None,
+    }
+
+
+# Set True (or MEMSRE_FORCE_PIPELINE=1) to diagnose with the original fixed pipeline instead of the investigator.
+FORCE_PIPELINE = config.FORCE_PIPELINE
+
+
 def create_incident(ans: AgentAnswer, correction: str, answer_format: str | None = None) -> dict:
-    """Diagnose a wrong answer: culprit -> evidence -> identity -> classify -> blast radius. Saves and returns the incident."""
+    """Diagnose a wrong answer and save the incident. Routed through the investigator agent
+    (memsre/investigator.py), which falls back to the fixed pipeline if it cannot finish."""
+    if FORCE_PIPELINE:
+        return pipeline_incident(ans, correction, answer_format)
+    from .investigator import investigate   # lazy: the investigator imports this module
+    return investigate(ans, correction, answer_format)
+
+
+def pipeline_incident(ans: AgentAnswer, correction: str, answer_format: str | None = None, save: bool = True) -> dict:
+    """The original fixed pipeline: culprit -> evidence -> identity -> classify -> blast radius."""
     key = ans.customer_key
     name = catalog.customer_name(key)
     cust_tags = store.customer_tags(key)
@@ -224,42 +278,14 @@ def create_incident(ans: AgentAnswer, correction: str, answer_format: str | None
     foreign_tags = _foreign_customer_tags(supporting, cust_tags)
     if foreign_tags:
         identity = identity_check(key, foreign_tags[0].split(":", 1)[1])
-    identity_confirmed = (identity["same_customer"] and identity["confidence"] >= IDENTITY_MIN_CONFIDENCE
-                          if identity else None)
 
-    # 4. Classify.
-    failure_type = classify(culprits, supporting, ans.used_memory_ids, cust_tags, identity_confirmed)
-
-    # 5. Blast radius: earlier answers that relied on the culprit memories.
-    affected = store.answers_using(culprit_ids) if culprit_ids else []
-
-    incident = {
-        "id": store.next_incident_id(),
-        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "status": "no_fix" if failure_type in NO_FIX_TYPES else "open",
-        "customer_key": key,
-        "customer_name": name,
-        "question": ans.question,
-        "answer_format": answer_format,
-        "wrong_answer": ans.answer,
-        "wrong_short_answer": ans.short_answer,
-        "correction": correction,
-        "used_memories": [m.to_dict() for m in ans.used_memories],
-        "culprits": [m.to_dict() for m in culprits],
-        "wrong_claim": str(c.get("wrong_claim") or ""),
-        "culprit_asserts_current_state": asserts_current,
-        "culprit_reason": str(c.get("reason") or ""),
-        "supporting": [m.to_dict() for m in supporting],
-        "evidence_reason": str(e.get("reason") or ""),
-        "identity": identity,
-        "failure_type": failure_type,
-        "root_cause": root_cause_text(failure_type, name, identity),
-        "blast_radius": {"answers_affected": len(affected), "answer_ids": [r["answer_id"] for r in affected]},
-        "recommended_fix": recommended_fix(failure_type, name, culprits, supporting, identity, asserts_current),
-        "applied_actions": [],
-        "reask": None,
-    }
-    store.add_incident(incident)
+    # 4-5. Classify + blast radius happen in build_incident.
+    incident = build_incident(
+        ans, correction, answer_format, culprits=culprits, wrong_claim=str(c.get("wrong_claim") or ""),
+        asserts_current=asserts_current, culprit_reason=str(c.get("reason") or ""), supporting=supporting,
+        evidence_reason=str(e.get("reason") or ""), identity=identity)
+    if save:
+        store.add_incident(incident)
     return incident
 
 

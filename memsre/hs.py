@@ -157,6 +157,18 @@ def recall(bank_id, query, tags=None, types=("world", "experience"), max_tokens=
     return [_to_mem(r) for r in resp.results]
 
 
+def get_memory(bank_id, memory_id) -> Mem | None:
+    """One memory unit by id (None if it does not exist)."""
+    d = _rest("GET", bank_id, f"/memories/{quote(memory_id, safe='')}", ignore_404=True)
+    if not d:
+        return None
+    tags = list(d.get("tags") or [])
+    source = (d.get("metadata") or {}).get("source") or next(
+        (t.split(":", 1)[1] for t in tags if t.startswith("source:")), "")
+    return Mem(id=d["id"], text=d.get("text") or "", date=(d.get("occurred_start") or d.get("mentioned_at") or "")[:10],
+               tags=tags, source=source, document_id=d.get("document_id"))
+
+
 def invalidate(bank_id, memory_id, reason) -> None:
     """Quarantine a memory (reversible with restore)."""
     _rest("PATCH", bank_id, f"/memories/{quote(memory_id, safe='')}",

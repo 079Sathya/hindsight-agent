@@ -199,6 +199,18 @@ with tab_incidents:
             else:
                 st.caption("No contradicting evidence found.")
 
+            # Agent trace (investigator)
+            inv = inc.get("investigation")
+            if inv:
+                label = (f"Investigation trace · {len(inv['steps'])} steps · {inv['llm_calls']} LLM calls · "
+                         f"{inv['duration_s']}s" + (" · fell back to the fixed pipeline" if inv.get("fallback") else ""))
+                with st.expander(label):
+                    for n, s in enumerate(inv["steps"], 1):
+                        args = ", ".join(f"{k}={v!r}" for k, v in s["args"].items())
+                        st.markdown(f"**{n}. `{s['tool']}`**({args}) — {s['thought']}")
+                        if s["tool"] not in ("final",):
+                            st.caption(s["result_summary"][:400])
+
             # 5. Root cause
             st.markdown("#### Root cause")
             st.warning(inc["root_cause"])

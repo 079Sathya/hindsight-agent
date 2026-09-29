@@ -62,7 +62,7 @@ Everything `app.py` needs is below. The UI should call only these functions and 
 
 | Signature | Returns | Purpose |
 |---|---|---|
-| `create_incident(ans: AgentAnswer, correction: str, answer_format: str \| None = None) -> dict` | incident dict (below) | 👎 **Report & diagnose**. Saves the incident; use `inc["id"]` and `inc["failure_type"]` in the success message. |
+| `create_incident(ans: AgentAnswer, correction: str, answer_format: str \| None = None) -> dict` | incident dict (below) | 👎 **Report & diagnose**. Saves the incident; use `inc["id"]` and `inc["failure_type"]` in the success message. Runs the **investigator agent** (`memsre/investigator.py`); if the agent can't finish, it falls back to the fixed pipeline and sets `inc["fallback"] = True`. `MEMSRE_FORCE_PIPELINE=1`, or setting `diagnose.FORCE_PIPELINE = True`, forces the fixed pipeline. |
 | `FAILURE_TYPES` | `list[str]` | `["RESOLUTION", "FRESHNESS", "RECALL_MISS", "EXECUTION", "MISSING_KNOWLEDGE", "UNKNOWN"]` |
 | `NO_FIX_TYPES` | `tuple[str, ...]` | `("EXECUTION", "UNKNOWN")`: disable **Apply fix** for these |
 
@@ -84,7 +84,9 @@ Plain JSON (strings, numbers, bools, lists, dicts, `None`), safe for `st.session
 | `culprit_asserts_current_state` | `bool` | |
 | `culprit_reason`, `evidence_reason` | `str` | LLM one-liners (extra keys, optional to show) |
 | `identity` | `dict \| None` | `{"foreign_tag": "customer:anvaya", "foreign_name", "same_customer", "confidence", "linking_evidence", "reason"}`. `None` when no identity check ran. |
-| `failure_type` | `str` | One of `FAILURE_TYPES` |
+| `failure_type` | `str` | One of `FAILURE_TYPES`. Always computed by `classify()` from the evidence gathered. |
+| `fallback` | `bool` | `True` if the investigator fell back to the fixed pipeline |
+| `investigation` | `dict` | The agent trace: `{"steps": [{"thought", "tool", "args", "result_summary"}], "llm_calls", "corrections", "duration_s", "used_playbook_id", "playbooks_shown", "used_rules", "agent_failure_type", "confidence", "fallback", "fallback_reason", "memory"}`. Absent when the fixed pipeline was forced. |
 | `root_cause` | `str` | For `st.warning(...)` |
 | `blast_radius` | `dict` | `{"answers_affected": int, "answer_ids": [str]}`, for `st.metric("Earlier answers that used this memory", ...)` |
 | `recommended_fix` | `list[str]` | Bullet list |

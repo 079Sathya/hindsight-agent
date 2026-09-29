@@ -24,8 +24,14 @@ MAIN_BANK_ID = _env("MAIN_BANK_ID", "memsre-lumora-support")
 LESSONS_BANK_ID = _env("LESSONS_BANK_ID", "memsre-lessons")
 GROQ_TPM_BUDGET = int(_env("GROQ_TPM_BUDGET", "7000"))
 
+# MEMSRE_MEMORY=off disables lessons, playbooks, detection rules and feedback (the benchmark's "memory OFF" arm).
+MEMORY_ENABLED = _env("MEMSRE_MEMORY", "on").lower() not in ("off", "0", "false", "no")
+# MEMSRE_FORCE_PIPELINE=1 makes diagnose.create_incident use the original fixed pipeline instead of the investigator.
+FORCE_PIPELINE = _env("MEMSRE_FORCE_PIPELINE").lower() in ("1", "true", "yes")
+
 SEED_DIR = ROOT / "data" / "seed"
-STATE_DIR = ROOT / "data" / "state"
+# MEMSRE_STATE_DIR lets the learning benchmark run each arm with its own local state.
+STATE_DIR = Path(_env("MEMSRE_STATE_DIR")) if _env("MEMSRE_STATE_DIR") else ROOT / "data" / "state"
 CACHE_DIR = ROOT / "data" / "cache"
 RESULTS_DIR = ROOT / "data" / "results"
 DOCS_DIR = ROOT / "docs"
