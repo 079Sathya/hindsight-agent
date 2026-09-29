@@ -16,7 +16,7 @@ from datetime import date, datetime, timezone
 from itertools import combinations
 
 from . import catalog, config, hs, repair, store, tools
-from .diagnose import IDENTITY_MIN_CONFIDENCE, SRE_SYSTEM, identity_check, recommended_fix, root_cause_text
+from .diagnose import SRE_SYSTEM, recommended_fix, root_cause_text
 from .llm import llm_json, render
 
 LESSONS = config.LESSONS_BANK_ID
@@ -320,23 +320,10 @@ def has_resolution_lesson() -> bool:
 
 
 def proactive_identity_scan() -> list[dict]:
-    """Run the learned rules as checks, then confirm each candidate with an identity check. Returns proposals."""
-    _checks, cands = rule_candidates()
-    if not cands:
-        return []
-    block = investigation_guidance("")["lessons_block"]
-    proposals = []
-    for c in cands:
-        ident = identity_check(c["a"], c["b"], block)
-        if ident["same_customer"] and ident["confidence"] >= IDENTITY_MIN_CONFIDENCE:
-            proposals.append({
-                "a": c["a"], "b": c["b"],
-                "name_a": catalog.customer_name(c["a"]), "name_b": catalog.customer_name(c["b"]),
-                "confidence": ident["confidence"], "linking_evidence": ident["linking_evidence"],
-                "shared_domain": ", ".join(c["values"]), "signal_type": c["signal_type"], "rule_id": c["rule_id"],
-                "reason": ident["reason"],
-            })
-    return proposals
+    """The UI's scan: a patrol that writes nothing (autonomy.patrol(apply=False)). Every candidate a learned rule
+    finds is investigated by the agent; the confirmed ones come back as proposals for accept/accept_all/reject."""
+    from . import autonomy   # lazy: autonomy imports this module
+    return autonomy.proposals_from(autonomy.patrol(apply=False, trigger="scan"))
 
 
 def reject_proposal(p: dict, reason: str) -> dict:
@@ -347,12 +334,15 @@ def reject_proposal(p: dict, reason: str) -> dict:
     signal = p.get("signal_type") or "email_domain"
     value = str(p.get("value") or p.get("shared_domain") or "").split(",")[0].strip().lower()
     for inc in store.list_incidents():
-        if (inc["status"] == "prevented" and inc.get("applied_actions")
-                and {inc["customer_key"], ((inc.get("identity") or {}).get("foreign_tag") or ":").split(":", 1)[1]} == {a, b}):
+        other = ((inc.get("identity") or {}).get("foreign_tag") or ":").split(":", 1)[1]
+        if inc["status"] not in ("prevented", "auto-opened") or {inc["customer_key"], other} != {a, b}:
+            continue
+        if inc.get("applied_actions"):
             inc = repair.undo_fix(inc["id"])
-            inc["status"] = "rejected"
-            inc["rejection"] = {"reason": reason}
-            store.update_incident(inc)
+        inc["status"] = "rejected"
+        inc["rejection"] = {"reason": reason}
+        store.update_incident(inc)
+        store.audit("incident_rejected", inc["id"], reason=reason)
     doc_id = f"exception-{pair_key(a, b)}"
     if config.MEMORY_ENABLED:
         _retain(f"Rejected identity proposal: '{catalog.customer_name(a)}' and '{catalog.customer_name(b)}' are NOT the "
@@ -379,9 +369,12 @@ def learning_curve() -> list[dict]:
         if inc["status"] == "rejected":
             continue
         prevented = inc["status"] == "prevented"
+        watched = prevented and inc.get("trigger") == "watch"   # caught right after the answer that fired the rule
         point = {"id": inc["id"], "customer_name": inc["customer_name"], "failure_type": inc["failure_type"],
-                 "status": inc["status"], "kind": "prevented" if prevented else "reactive",
-                 "wrong_answers": 0 if prevented else inc["blast_radius"]["answers_affected"],
+                 "status": inc["status"],
+                 "kind": "caught by watch" if watched else ("prevented" if prevented else "reactive"),
+                 # a watch catch counts the answer that fired it, conservatively, as one wrong answer
+                 "wrong_answers": 1 if watched else (0 if prevented else inc["blast_radius"]["answers_affected"]),
                  "lesson_learned": False}
         if not learned_yet and not prevented and inc["status"] in ("fixed", "reverted"):
             point["lesson_learned"] = learned_yet = True
@@ -389,10 +382,8 @@ def learning_curve() -> list[dict]:
     return points
 
 
-def accept_proposal(p) -> dict:
-    """Link a proposed identity pair before any wrong answer; returns the 'prevented' incident."""
-    if p["b"] in store.get_alias_keys(p["a"]):
-        raise ValueError(f"'{p['name_a']}' and '{p['name_b']}' are already linked")
+def prevented_incident(p: dict, status: str = "prevented") -> dict:
+    """An (unsaved) incident for an identity split found before any wrong answer (scan, patrol or watch)."""
     signal = p.get("signal_type") or "email_domain"
     identity = {"foreign_tag": f"customer:{p['b']}", "foreign_name": p["name_b"], "same_customer": True,
                 "confidence": p["confidence"], "linking_evidence": p["linking_evidence"],
@@ -400,7 +391,7 @@ def accept_proposal(p) -> dict:
     incident = {
         "id": store.next_incident_id(),
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "status": "prevented",
+        "status": status,
         "customer_key": p["a"],
         "customer_name": p["name_a"],
         "question": None,
@@ -424,9 +415,20 @@ def accept_proposal(p) -> dict:
         "reask": None,
         "rule_id": p.get("rule_id"),
         "signal_type": signal,
+        "shared_value": p["shared_domain"],
     }
     if p.get("investigation"):
         incident["investigation"] = p["investigation"]
+    if p.get("trigger"):
+        incident["trigger"] = p["trigger"]
+    return incident
+
+
+def accept_proposal(p) -> dict:
+    """Link a proposed identity pair before any wrong answer; returns the 'prevented' incident."""
+    if p["b"] in store.get_alias_keys(p["a"]):
+        raise ValueError(f"'{p['name_a']}' and '{p['name_b']}' are already linked")
+    incident = prevented_incident(p)
     incident["applied_actions"] = repair.link_identities(p["a"], p["b"], p["linking_evidence"], incident["id"])
     store.add_incident(incident)
     store.audit("prevented", incident["id"], pair=pair_key(p["a"], p["b"]), actions=incident["applied_actions"],

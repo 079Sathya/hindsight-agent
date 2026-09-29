@@ -46,11 +46,14 @@ def bank(tmp_path, monkeypatch):
     monkeypatch.setattr(hs, "recall", lambda *a, **k: [])   # no network in tests
     monkeypatch.setattr(hs, "list_tags", lambda bank_id, q: list(MAIN_TEXTS) if bank_id == config.MAIN_BANK_ID else [])
 
-    def identity_check(a, b, lessons_block=""):
+    from memsre import autonomy
+
+    def investigate_candidate(c, trigger="patrol"):   # the agent's verdict, mocked: every candidate confirmed
         state["identity"] += 1
-        return {"foreign_tag": f"customer:{b}", "foreign_name": b, "same_customer": True, "confidence": 0.95,
-                "linking_evidence": "shared domain", "reason": "shared company domain"}
-    monkeypatch.setattr(lessons, "identity_check", identity_check)
+        return {**c, "name_a": c["a"], "name_b": c["b"], "shared_domain": ", ".join(c["values"]), "same_customer": True,
+                "confidence": 0.95, "linking_evidence": "shared domain", "reason": "shared company domain",
+                "trigger": trigger, "investigation": {"agent": "patrol", "steps": []}}
+    monkeypatch.setattr(autonomy, "investigate_candidate", investigate_candidate)
     monkeypatch.setattr(config, "MEMORY_ENABLED", True)
     return state
 

@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from memsre import agent, catalog, config, diagnose, lessons, repair, store
+from memsre import agent, autonomy, catalog, config, diagnose, lessons, repair, store
 from memsre.grading import normalize
 
 st.set_page_config(page_title="Memory SRE", page_icon="🩺", layout="wide")
@@ -47,11 +47,12 @@ def memory_table(mems) -> None:
 def learning_curve_figure(points: list[dict]) -> go.Figure:
     """x = incidents in order, y = wrong answers customers saw before the fix; reactive vs prevented; lesson marker."""
     xs = list(range(1, len(points) + 1))
-    colors = ["#f59e0b" if p["kind"] == "reactive" else "#22c55e" for p in points]
+    colors = [{"reactive": "#f59e0b", "caught by watch": "#38bdf8"}.get(p["kind"], "#22c55e") for p in points]
     fig = go.Figure(go.Scatter(
         x=xs, y=[p["wrong_answers"] for p in points], mode="lines+markers+text",
         line={"color": "#94a3b8", "width": 2}, marker={"size": 14, "color": colors, "line": {"width": 2, "color": "white"}},
-        text=[f"{p['wrong_answers']} wrong" if p["kind"] == "reactive" else "prevented" for p in points],
+        text=[f"{p['wrong_answers']} wrong" if p["kind"] == "reactive" else
+              ("caught by watch" if p["kind"] == "caught by watch" else "prevented") for p in points],
         textposition="top center",
         customdata=[[p["id"], p["customer_name"], p["kind"]] for p in points],
         hovertemplate="%{customdata[0]} · %{customdata[1]}<br>%{customdata[2]}: %{y} wrong answers<extra></extra>"))
@@ -110,6 +111,10 @@ with tab_console:
             st.markdown(f"**{names.get(ans.customer_key, ans.customer_key)}** — {ans.question}")
             st.markdown(ans.answer)
             st.caption(f"Short answer: {ans.short_answer or '—'} · {ans.answer_id}")
+        for f in getattr(ans, "watch", None) or []:
+            st.info(f"Watch: learned rule `{f.get('rule_id')}` fired on this answer — {f['name_a']} ≡ {f['name_b']} "
+                    f"(shared `{f['shared_domain']}`): **{f['status']}**"
+                    + (f" as {f['incident_id']}" if f.get("incident_id") else ""))
         st.markdown("**Memories used**")
         memory_table(ans.used_memories)
 
@@ -228,7 +233,7 @@ with tab_incidents:
 
             # 8. Buttons
             b1, b2, b3, _ = st.columns([1, 1, 1, 3])
-            can_fix = status == "open" and ftype not in diagnose.NO_FIX_TYPES
+            can_fix = status in ("open", "auto-opened") and ftype not in diagnose.NO_FIX_TYPES
             if b1.button("Apply fix", type="primary", disabled=not can_fix, key="apply-fix"):
                 with st.spinner("Applying the fix in Hindsight, then re-asking and verifying…"):
                     done = call(repair.apply_fix, inc["id"])
@@ -267,6 +272,20 @@ with tab_incidents:
                 if normalize(inc["reask"]["short_answer"]) != normalize(inc["wrong_short_answer"] or ""):
                     st.success(f"The answer changed after the fix: "
                                f"{inc['wrong_short_answer']} → {inc['reask']['short_answer']}")
+
+            # Reviewer feedback on autonomous (patrol / watch) incidents
+            if status in ("prevented", "auto-opened") and identity:
+                with st.expander("Reject this link (retained as a rule exception)"):
+                    reason = st.text_input("Why is this not the same customer?", key=f"inc-reason-{inc['id']}")
+                    if st.button("Reject", key=f"inc-reject-{inc['id']}"):
+                        p = {"a": inc["customer_key"], "b": identity["foreign_tag"].split(":", 1)[1],
+                             "signal_type": inc.get("signal_type") or "email_domain",
+                             "shared_domain": inc.get("shared_value") or inc.get("evidence_reason", "").rsplit(" ", 1)[-1]}
+                        with st.spinner("Undoing the link and recording the rejection…"):
+                            done = call(lessons.reject_proposal, p, reason)
+                        if done is not None:
+                            flash("info", f"Rejected: {done['value']} is now a rule exception.")
+                            st.rerun()
 
             # Verification (Phase 2): re-asked answers judged against the correction; failed hypotheses rolled back
             ver = inc.get("verification")
@@ -353,6 +372,21 @@ with tab_health:
     has_lesson = bool(call(lessons.has_resolution_lesson))
     if not has_lesson:
         st.session_state["proposals"] = None   # e.g. after a reseed: old cards no longer apply
+    if st.button("Run patrol (autonomous: acts per policy)", disabled=not has_lesson, key="patrol"):
+        with st.spinner("Patrolling every customer record with the learned rules…"):
+            report = call(autonomy.patrol)
+            if report is not None:
+                st.session_state["patrol_report"] = report
+        if report is not None:
+            st.rerun()
+    report = st.session_state.get("patrol_report")
+    if report:
+        st.caption(f"Patrol: {report['checks']} rule checks → {report['candidates']} candidates · {report['duration_s']}s")
+        for f in report["findings"]:
+            icon = {"prevented": "✅", "pending": "⏳", "dismissed": "✖️"}.get(f["status"], "•")
+            st.markdown(f"- {icon} **{f['name_a']} ≡ {f['name_b']}** · `{f['shared_domain']}` · confidence "
+                        f"{f['confidence']:.2f} · **{f['status']}**" + (f" ({f['incident_id']})" if f.get("incident_id") else "")
+                        + f" :gray[{f['reason']}]")
     if st.button("Run proactive scan", disabled=not has_lesson, key="scan"):
         with st.spinner("Scanning memory for unlinked identities…"):
             proposals = call(lessons.proactive_identity_scan)

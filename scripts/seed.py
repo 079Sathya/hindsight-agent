@@ -70,6 +70,13 @@ def seed(keep_lessons: bool = False) -> int:
     hs.wait_for_idle(config.MAIN_BANK_ID, 300)
     wait_until_recall_settled(tag_names)
     print(f"SEEDED {len(events)} events", flush=True)
+
+    # Autonomy: if learned detection rules survived (--keep-lessons), patrol the fresh bank right away.
+    from memsre import autonomy, lessons
+    if lessons.learned_rules():
+        report = autonomy.patrol(apply=True, trigger="after_seed")
+        print(f"PATROL: {report['checks']} rule checks, {report['candidates']} candidates -> "
+              + ", ".join(f"{f['name_a']} = {f['name_b']}: {f['status']}" for f in report["findings"]), flush=True)
     return len(events)
 
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from . import catalog, config, hs, store
@@ -47,6 +47,7 @@ class AgentAnswer:
     used_memories: list[Mem]     # full objects for the ids used
     shown_memories: list[Mem]    # everything recalled and shown to the LLM
     answer_id: str
+    watch: list = field(default_factory=list)   # Watch findings opened after this answer (autonomy.watch)
 
 
 def memory_line(m: Mem) -> str:
@@ -89,7 +90,7 @@ def answer(customer_key: str, question: str, answer_format: str | None = None, r
         "short_answer": short,
         "used_memory_ids": used_ids,
     })
-    return AgentAnswer(
+    ans = AgentAnswer(
         customer_key=customer_key,
         question=question,
         answer=text,
@@ -99,6 +100,15 @@ def answer(customer_key: str, question: str, answer_format: str | None = None, r
         shown_memories=mems,
         answer_id=answer_id,
     )
+    if run == "live" and config.MEMORY_ENABLED:
+        # Watch: run the learned detection rules as cheap checks on what was just recalled (no LLM call unless a
+        # rule fires). Only for live answers, never for eval, verification or re-asks.
+        try:
+            from . import autonomy
+            ans.watch = autonomy.watch(ans)
+        except Exception as e:  # watching must never break answering
+            print(f"[agent] watch failed: {e}", flush=True)
+    return ans
 
 
 def _main(argv: list[str]) -> None:

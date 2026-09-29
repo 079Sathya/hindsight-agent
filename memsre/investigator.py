@@ -52,6 +52,25 @@ GUARDRAILS:
 - If a proven playbook matches this case, follow its tool path first.
 - Be efficient: at most {max_steps} turns in total."""
 
+PATROL_SYSTEM = """You are the Memory SRE patrol agent. A detection rule learned from past incidents fired: two customer records in an AI support agent's memory (Hindsight) share a concrete signal. Decide, with tools, whether they are the SAME real-world customer, before any wrong answer happens.
+
+Each turn reply with ONE JSON object, either an action:
+{"thought": "<one short sentence>", "action": {"tool": "<tool name>", "args": {<arguments>}}}
+or the verdict:
+{"thought": "<one short sentence>", "final": FINAL}
+
+TOOLS:
+{tool_catalog}
+
+GUARDRAILS:
+- Call compare_records on the two records before the verdict.
+- Confidence >= 0.85 only if the records corroborate each other beyond the shared signal (for example billing or plan continuity, the same people, one record being the billing or legal side of the other). If both are separately contracted customers with their own plans and contacts, or the shared contact looks like a third party such as a vendor or agency, keep confidence below 0.85.
+- Never treat a REJECTED PATTERN as linking evidence.
+- At most {max_steps} turns."""
+
+PATROL_FINAL = ('{"same_customer": true or false, "confidence": 0.0-1.0, "linking_evidence": "<exact quotes from the records>", '
+                '"reason": "<one sentence>"}')
+
 REACTIVE_FINAL = ('{"culprit_ids": ["<id>"], "wrong_claim": "<one sentence>", "culprit_asserts_current_state": true or false, '
                   '"supporting_ids": ["<id>"], "foreign_tag": "customer:<key>" or null, "failure_type": "<type>", '
                   '"confidence": 0.0-1.0, "used_playbook_id": "<id>" or null, "reason": "<one sentence>"}')
@@ -87,9 +106,10 @@ def _render_transcript(transcript: list[dict]) -> str:
     return "\n\n".join(out)
 
 
-def run_loop(case: str, final_schema: str, ctx: tools.Ctx, validate_final, *, max_steps: int = MAX_STEPS) -> dict:
+def run_loop(case: str, final_schema: str, ctx: tools.Ctx, validate_final, *, max_steps: int = MAX_STEPS,
+             system_template: str = SYSTEM) -> dict:
     """Drive the JSON-action loop. Returns {final | None, steps, llm_calls, corrections, fallback_reason}."""
-    system = (SYSTEM.replace("{tool_catalog}", tools.tool_catalog()).replace("{max_steps}", str(max_steps))
+    system = (system_template.replace("{tool_catalog}", tools.tool_catalog()).replace("{max_steps}", str(max_steps))
               .replace("FINAL", final_schema))
     transcript: list[dict] = []
     steps, llm_calls, corrections, failures = [], 0, 0, 0

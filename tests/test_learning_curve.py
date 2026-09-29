@@ -24,6 +24,13 @@ def test_curve_reactive_then_prevented(monkeypatch):
     assert [p["lesson_learned"] for p in curve] == [True, False, False, False]
 
 
+def test_watch_catch_counts_the_answer_that_fired_it(monkeypatch):
+    watched = {**inc("INC-002", "prevented", 0, name="Monsoon Trails"), "trigger": "watch"}
+    monkeypatch.setattr(store, "list_incidents", lambda: [watched, inc("INC-001", "fixed", 2)])
+    curve = lessons.learning_curve()
+    assert [(p["kind"], p["wrong_answers"]) for p in curve] == [("reactive", 2), ("caught by watch", 1)]
+
+
 def test_curve_open_incident_is_not_a_lesson(monkeypatch):
     monkeypatch.setattr(store, "list_incidents", lambda: [inc("INC-001", "open", 3)])
     curve = lessons.learning_curve()

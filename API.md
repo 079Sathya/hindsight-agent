@@ -159,6 +159,28 @@ Button rules [§12]:
 
 Proposal dict: `{"a": "saffron", "b": "mehta-bros", "name_a": "Saffron Retail", "name_b": "Mehta Brothers Trading LLP", "confidence": 0.95, "linking_evidence": str, "shared_domain": "mehtabros.co.in", "reason": str}`. Card title: `f"{p['name_a']} ≡ {p['name_b']}"`.
 
+## `memsre.autonomy` (Phase 4: Watch and Patrol)
+
+Both derive their checks **only** from detection rules learned into Hindsight (`lessons.learned_rules()`). They skip rejected patterns (`lessons.exceptions()`), confirm each hit with the investigator agent in patrol mode, and then act per the autonomy policy (`repair.apply_policy(inc, "prevented")`).
+
+| Signature | Returns | Purpose |
+|---|---|---|
+| `patrol(apply: bool = True, trigger: str = "patrol") -> dict` | `{"rules", "checks", "candidates", "duration_s", "findings": [finding]}` | **Run patrol**: every learned rule across every customer record. With `apply=True`, each confirmed finding becomes an incident: `prevented` if auto-applied (confidence ≥ 0.85), or `auto-opened` waiting for approval (`status == "pending"` in the finding). `dismissed` findings write nothing. With `apply=False`, nothing is written and confirmed findings are returned as `"proposed"`. |
+| `watch(ans: AgentAnswer) -> list[dict]` | findings | Runs automatically after every **live** `agent.answer` (not eval, verify or re-ask answers). Cheap checks on the recalled memories; the LLM is called only if a rule fires. Results appear in `ans.watch`. |
+| `investigate_candidate(c: dict, trigger: str = "patrol") -> dict` | finding | Patrol-mode agent run on one rule candidate (max 5 turns; `compare_records` required) |
+| `proposals_from(report: dict) -> list[dict]` | proposals | Confirmed findings in the proposal shape used by the scan |
+
+A finding is `{"a", "b", "name_a", "name_b", "signal_type", "value", "shared_domain", "rule_id", "same_customer", "confidence", "linking_evidence", "reason", "trigger", "investigation", "status", "incident_id", "policy"}`.
+
+Incident statuses added by autonomy:
+- `auto-opened`: waiting for approval. **Apply fix** links it and it becomes `prevented`.
+- `prevented`: linked before any wrong answer. Incidents with `trigger == "watch"` were caught right after the answer that fired the rule.
+- `rejected`: a reviewer rejected it via `reject_proposal`, which undoes it if it was applied.
+
+`lessons.proactive_identity_scan()` is now a thin wrapper over `patrol(apply=False)`, so it keeps the same proposal shape plus `signal_type`, `rule_id` and `investigation`. `accept_proposal`, `accept_all` and `reject_proposal` work on those proposals. `lessons.learning_curve()` points have `kind` = `"reactive"`, `"prevented"` or `"caught by watch"`; a watch catch counts its triggering answer as 1 wrong answer.
+
+`AgentAnswer.watch` is a list of findings from `autonomy.watch`, empty unless a learned rule fired.
+
 ## Files
 
 - **`docs/before_after.png`**: the headline chart (`st.image`).

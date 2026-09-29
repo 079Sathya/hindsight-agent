@@ -159,7 +159,7 @@ def apply_policy(inc: dict, kind: str = "reactive") -> dict:
     inc["policy"] = decision
     store.update_incident(inc)
     store.audit("policy_decision", inc["id"], **decision)
-    if decision["decision"] == "auto" and inc["status"] == "open":
+    if decision["decision"] == "auto" and inc["status"] in ("open", "auto-opened"):
         return apply_fix(inc["id"])
     return inc
 
@@ -241,13 +241,21 @@ def apply_fix(incident_id: str) -> dict:
                     checks=[{k: c[k] for k in ("question", "short_answer", "consistent", "reason")}
                             for c in verification["checks"]])
         if verification["passed"]:
-            inc["status"], inc["needs_human"] = "fixed", False
+            # An incident without a question was found before any wrong answer (patrol / watch): it is "prevented".
+            inc["status"], inc["needs_human"] = ("fixed" if inc.get("question") else "prevented"), False
+            store.update_incident(inc)
             try:
                 from . import lessons
                 lessons.record(inc)
             except Exception as e:  # the lesson is a bonus; never fail the fix over it
                 print(f"[repair] lesson not recorded: {e}", flush=True)
             store.update_incident(inc)
+            if inc["status"] == "fixed" and store.get_policy().get("auto_patrol_after_fix"):
+                try:   # autonomy: apply what was just learned across the whole bank
+                    from . import autonomy
+                    autonomy.patrol(apply=True, trigger="after_fix")
+                except Exception as e:
+                    print(f"[repair] auto-patrol failed: {e}", flush=True)
             return inc
 
         # Self-correct: the fix did not make the agent right. Roll it back and try the next hypothesis.
