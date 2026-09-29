@@ -86,7 +86,7 @@ Plain JSON (strings, numbers, bools, lists, dicts, `None`), safe for `st.session
 | `identity` | `dict \| None` | `{"foreign_tag": "customer:anvaya", "foreign_name", "same_customer", "confidence", "linking_evidence", "reason"}`. `None` when no identity check ran. |
 | `failure_type` | `str` | One of `FAILURE_TYPES`. Always computed by `classify()` from the evidence gathered. |
 | `fallback` | `bool` | `True` if the investigator fell back to the fixed pipeline |
-| `investigation` | `dict` | The agent trace: `{"steps": [{"thought", "tool", "args", "result_summary"}], "llm_calls", "corrections", "duration_s", "used_playbook_id", "playbooks_shown", "used_rules", "agent_failure_type", "confidence", "fallback", "fallback_reason", "memory"}`. Absent when the fixed pipeline was forced. |
+| `investigation` | `dict` | The agent trace: `{"steps": [{"thought", "tool", "args", "result_summary"}], "llm_calls", "corrections", "duration_s", "used_playbook_id", "playbooks_shown", "used_rules", "identifiers", "agent_failure_type", "confidence", "fallback", "fallback_reason", "memory"}`. `identifiers` is `{signal_type: [values]}`: the email domains, addresses, phones and account ids found in the customer's own records and given to the agent in its case file. Absent when the fixed pipeline was forced. |
 | `root_cause` | `str` | For `st.warning(...)` |
 | `blast_radius` | `dict` | `{"answers_affected": int, "answer_ids": [str]}`, for `st.metric("Earlier answers that used this memory", ...)` |
 | `recommended_fix` | `list[str]` | Bullet list |
@@ -165,7 +165,7 @@ Both derive their checks **only** from detection rules learned into Hindsight (`
 
 | Signature | Returns | Purpose |
 |---|---|---|
-| `patrol(apply: bool = True, trigger: str = "patrol") -> dict` | `{"rules", "checks", "candidates", "duration_s", "findings": [finding]}` | **Run patrol**: every learned rule across every customer record. With `apply=True`, each confirmed finding becomes an incident: `prevented` if auto-applied (confidence ≥ 0.85), or `auto-opened` waiting for approval (`status == "pending"` in the finding). `dismissed` findings write nothing. With `apply=False`, nothing is written and confirmed findings are returned as `"proposed"`. |
+| `patrol(apply: bool = True, trigger: str = "patrol") -> dict` | `{"rules", "checks", "candidates", "duration_s", "findings": [finding]}` | **Run patrol**: every learned rule across every customer record. With `apply=True`, each confirmed finding becomes an incident: `prevented` if auto-applied (confidence ≥ 0.85), or `auto-opened` waiting for approval (`status == "pending"` in the finding). `dismissed` findings write nothing (a reviewer can still make a dismissal stick with `reject_proposal(finding, reason)`, the **Reject pattern** control). With `apply=False`, nothing is written and confirmed findings are returned as `"proposed"`. |
 | `watch(ans: AgentAnswer) -> list[dict]` | findings | Runs automatically after every **live** `agent.answer` (not eval, verify or re-ask answers). Cheap checks on the recalled memories; the LLM is called only if a rule fires. Results appear in `ans.watch`. |
 | `investigate_candidate(c: dict, trigger: str = "patrol") -> dict` | finding | Patrol-mode agent run on one rule candidate (max 5 turns; `compare_records` required) |
 | `proposals_from(report: dict) -> list[dict]` | proposals | Confirmed findings in the proposal shape used by the scan |

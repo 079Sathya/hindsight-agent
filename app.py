@@ -387,6 +387,22 @@ with tab_health:
             st.markdown(f"- {icon} **{f['name_a']} ≡ {f['name_b']}** · `{f['shared_domain']}` · confidence "
                         f"{f['confidence']:.2f} · **{f['status']}**" + (f" ({f['incident_id']})" if f.get("incident_id") else "")
                         + f" :gray[{f['reason']}]")
+            if f["status"] != "dismissed":
+                continue
+            # The agent dismissed this hit; a reviewer can make that stick, so patrol stops re-checking the pattern.
+            pair = f"{f['a']}|{f['b']}"
+            if pair in st.session_state.setdefault("rejected_pairs", set()):
+                st.caption(f"Pattern `{f['value']}` rejected: retained as a rule exception, so it is not checked again.")
+                continue
+            with st.expander(f"Reject this pattern for good (`{f['value']}`)"):
+                reason = st.text_input("Reason to reject", key=f"dreason-{pair}",
+                                       placeholder="e.g. shared IT vendor domain, not the customer's own")
+                if st.button("Reject pattern", key=f"dreject-{pair}"):
+                    with st.spinner("Recording the rejection as a lesson…"):
+                        done = call(lessons.reject_proposal, f, reason)
+                    if done is not None:
+                        st.session_state["rejected_pairs"].add(pair)
+                        st.rerun()
     if st.button("Run proactive scan", disabled=not has_lesson, key="scan"):
         with st.spinner("Scanning memory for unlinked identities…"):
             proposals = call(lessons.proactive_identity_scan)
