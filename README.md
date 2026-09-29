@@ -52,7 +52,7 @@ flowchart LR
   LB -->|learned rules: Patrol + Watch| SRE
 ```
 
-Code layout: the `memsre/` package holds all the logic. The investigator is `investigator.py` and its tools are in `tools.py`; `diagnose.py` holds the fixed pipeline and `classify()`; `repair.py` does act, verify and rollback; `lessons.py` handles post-mortems, playbooks, rules and feedback; and `autonomy.py` runs Watch and Patrol. `hs.py` and `llm.py` are the clients. `app.py` is the Streamlit UI, and `scripts/` has `smoke.py`, `seed.py`, `eval.py` and `learning_benchmark.py`. The UI calls only the functions documented in [`API.md`](API.md).
+Code layout: the `memsre/` package holds all the logic. The investigator is `investigator.py` and its tools are in `tools.py`; `diagnose.py` holds the fixed pipeline and `classify()`; `repair.py` does act, verify and rollback; `lessons.py` handles post-mortems, playbooks, rules and feedback; and `autonomy.py` runs Watch and Patrol. `hs.py` and `llm.py` are the clients. `app.py` is the Streamlit UI and `ui/` holds its design system (theme, components, charts), the live agent trace and cached reads; `scripts/` has `smoke.py`, `seed.py`, `eval.py` and `learning_benchmark.py`. The UI calls only the functions documented in [`API.md`](API.md).
 
 ## Agent architecture
 
@@ -184,36 +184,49 @@ pytest
 
 ## Demo walkthrough
 
-1. In **Support Console**, select **Kestrel Logistics**:
-   1. Ask *"What is Kestrel Logistics' API rate limit?"*. The agent answers 10000, which is wrong. Don't report it.
-   2. Ask *"Can Kestrel Logistics export audit logs?"*. It answers "Yes…", which is also wrong.
-   3. Click 👎, paste *"Wrong — the customer says audit log export fails. They told us they moved to the Growth plan in August."*, then click **Report & diagnose**.
-2. In the **Incidents** tab, open the **Investigation trace** to watch the agent work. In our walkthrough run it took 8 steps and 9 LLM calls, about 85 s:
-   - it searched the whole bank and found Anvaya's Growth-plan invoice, filed under `customer:anvaya`;
-   - it searched for records sharing `anvaya.in`, an email domain from Kestrel's own records (its admin is `ravi.k@anvaya.in`);
-   - it confirmed Kestrel ≡ Anvaya with `compare_records`, at confidence 0.95;
-   - its premature verdicts appear as **verdict rejected** steps, where the evidence gates sent it back to gather evidence.
+Run `python scripts/seed.py`, then `streamlit run app.py`.
 
-   The incident shows:
-   - the culprit memory (the June Enterprise signing);
-   - the supporting evidence (the Growth invoice);
-   - the identity link, via `ravi.k@anvaya.in` and `accounts@anvaya.in`;
-   - root cause **RESOLUTION**, and a blast radius of 2.
+1. **Support console**: pick **Kestrel Logistics**.
+   1. Click the sample *"What is Kestrel Logistics' API rate limit?"*, then **Ask**. The agent answers 10,000 requests/min, which is wrong. Don't report it.
+   2. Click *"Can Kestrel Logistics export audit logs?"*, then **Ask**. The answer fades in as "Yes…", which is also wrong. The memory cards below it show what the agent recalled.
+   3. Click **Wrong**, paste *"Wrong — the customer says audit log export fails. They told us they moved to the Growth plan in August."*, and click **Report & diagnose**.
+2. The **live agent trace** replaces the form and streams each step as it happens:
+   - The active step pulses, and finished steps get a check.
+   - A premature verdict shows as an amber **evidence gate** step, with the real pushback reason.
+   - The agent searches the whole bank and finds the Growth-plan invoice filed under `customer:anvaya`. It then searches for records sharing `anvaya.in`, an email domain from Kestrel's own records, and confirms Kestrel ≡ Anvaya with `compare_records`.
+   - It ends on a green verdict: **RESOLUTION**.
+3. Click **Open case file**. The case file shows:
+   - the failure-type badge and what went wrong;
+   - the **identity link**: the two customer records joined by an animated connector, with the evidence quoted;
+   - the culprit memory, with a red edge;
+   - the contradicting evidence, with the foreign tag highlighted;
+   - the blast radius (2 answers) and the root cause.
 
-   The policy caption says the fix is waiting for approval, because reactive fixes need a human in the demo policy.
-3. Click **Apply fix**. Memory SRE:
-   - links the identities, retains an identity-link memory and invalidates the superseded Enterprise memory;
-   - re-asks both affected questions and has a judge check each new answer (*2 of 2 re-asked answers consistent*).
+   The fix plan says it is waiting for approval, because reactive fixes need a human in the demo policy.
+4. Click **Apply fix**. Once the fix verifies:
+   - the culprit memory is struck through and fades;
+   - a green **Memory healed** banner appears;
+   - each re-asked question flips ✗ → ✓ as the judge confirms it.
 
-   The answer changes from Yes to **No**, because Kestrel is now on the Growth plan, which doesn't include audit log export. **Undo fix** reverses all of it.
-4. In **Memory Health**, the post-mortem's self-written **detection rule** (`email_domain`) and the living **Memory SRE Playbook** appear. Click **Run patrol**. In our run, 12 rule checks found 4 candidates, and the agent checked each one with `compare_records`:
-   - It **prevented** three splits that no customer had hit yet: **Saffron Retail ≡ Mehta Brothers Trading LLP**, **Monsoon Trails ≡ Ruparel Holidays Pvt Ltd** and **Neelgiri Organics ≡ Kaveri Agro Foods LLP** (confidence 0.98–0.99). Each was auto-applied per the policy and can be undone.
-   - It **dismissed** **Pinecrest Hospitals ≡ Vanadium Energy**, which share only `nimbusit.in`, the domain of their managed-IT vendor.
-5. Expand **Reject this pattern for good (`nimbusit.in`)**, give a reason (for example *"Nimbus IT is a managed-IT vendor serving both companies"*), and click **Reject pattern**. The rejection is retained in Hindsight as a rule exception. Click **Run patrol** again: 12 checks, 0 candidates, so the vendor pattern is not checked again.
-6. The **Learning curve** reads 2 → 0 → 0 → 0: the first identity split reached customers, and every later one was prevented before any wrong answer.
-7. Finish on the before/after chart.
+   **Re-ask question** shows the answer before and after: Yes → **No**. **Undo fix** reverses all of it, and the full agent trace is in the expander at the bottom.
+5. **Autonomy**: Auto mode is on. Click **Run patrol**.
+   - The live feed shows the learned `email_domain` rule firing on each candidate, and the agent checking each one with `compare_records`.
+   - It prevents **Saffron Retail ≡ Mehta Brothers Trading LLP**, **Monsoon Trails ≡ Ruparel Holidays Pvt Ltd** and **Neelgiri Organics ≡ Kaveri Agro Foods LLP** before any customer gets a wrong answer.
+   - The **Activity** feed records every write.
 
-**Run proactive scan** is the read-only version of the patrol. It proposes links without writing anything, and each proposal has **Link identities**, **Accept all** and **Reject**.
+   To see the approval flow instead, turn **Auto mode** off before patrolling: the findings wait in **Awaiting approval**, with **Approve & apply** and **Reject**.
+
+   The patrol may also flag **Pinecrest Hospitals ≡ Vanadium Energy**, whose tickets share `nimbusit.in`, their managed-IT vendor. The agent dismisses that pair. Open **Reject this pattern for good**, give a reason and click **Reject pattern**. The rejection becomes a rule exception, and the next patrol no longer checks it. Whether this pair appears depends on how Hindsight extracted the facts for that seed.
+6. **Learning**: the charts animate in:
+   - before/after accuracy (60% → 100%);
+   - the A/B benchmark (wrong answers and investigation steps, memory OFF vs ON);
+   - diagnosis cost per incident;
+   - the learning curve (2 → 0 → 0 → 0);
+   - rule proof counts.
+
+   Below the charts are **Rules the agent wrote**, the rejected patterns, and the **living playbook**. Once the playbook has refreshed, a version slider and a diff show what changed.
+
+**Run proactive scan** is the read-only version of the patrol. It proposes links, each with **Link identities**, **Accept all** and **Reject**, and writes nothing.
 
 ## Limitations
 
@@ -243,6 +256,12 @@ These are honest deviations from the original build plan, each made to get the p
   - *The change:* the case file now lists the concrete identifiers found in the customer's own records: email domains and addresses, phones and account ids. They are extracted with the same regexes the tools use, with no LLM call. Every turn also restates the open leads and the turns left. The agent still decides what to search and whether to compare.
   - *The result:* in the next full walkthrough, the agent searched `anvaya.in`, confirmed the link with `compare_records` and concluded RESOLUTION in 8 steps (9 LLM calls), with no fallback. See `memsre/investigator.py`.
 - **Phone matching.** `find_records_sharing` compares phones by their last 10 digits, so `+91 98450 12345` matches `98450-12345`. Before this, a phone search could never match: stored phones were reduced to digits, but the text search used the agent's formatting. See `memsre/tools.py`.
+- **Live agent trace without touching the backend.**
+  - `ui/live.py` wraps five functions that the agent loop already calls through module attributes: `investigator.llm_json`, `tools.run_tool`, `diagnose.pipeline_incident`, `autonomy.investigate_candidate` and `autonomy._act`.
+  - The wrappers pass everything through unchanged and notify a listener registered for the current script thread.
+  - Each step's outcome comes from the transcript in the agent's own next prompt: a tool result, an invalid reply, or a pushed-back verdict with its reason.
+  - A click during a long run is deferred until the backend call finishes, so it can't abort an investigation or a patrol halfway.
+- **Styling Streamlit safely.** `st.html` sanitizes its input with DOMPurify. That drops a whole `<style>` block if its text contains `<` followed by a letter, and it strips inline SVG. So the stylesheet never contains one (it uses the `\3c` escape for `@property`), icons are CSS masks, and a test asserts both.
 - **Lesson detection.** `has_resolution_lesson()` also checks the lesson's `type:resolution` tag, because Hindsight's extraction paraphrases the post-mortem and drops the word "RESOLUTION".
 
 ## What's next

@@ -26,7 +26,7 @@ Everything `app.py` needs is below. The UI should call only these functions and 
 |---|---|---|
 | `MAIN_BANK_ID` | `str` | Customer-memory bank id (sidebar) |
 | `LESSONS_BANK_ID` | `str` | Lessons bank id (sidebar) |
-| `DOCS_DIR / "before_after.png"` | `Path` | Chart written by `scripts/eval.py` (Memory Health tab) |
+| `DOCS_DIR / "before_after.png"` | `Path` | Chart written by `scripts/eval.py` (Learning tab) |
 | `check() -> None` | function | Raises `RuntimeError` naming the missing `.env` setting. Call once at startup. |
 
 ## `memsre.catalog`
@@ -136,7 +136,7 @@ Button rules [§12]:
 | `get_policy() -> dict` | `{"auto_apply_min_confidence": 0.85, "reactive": "approval", "prevented": "auto", "auto_patrol_after_fix": False}` | The autonomy policy (saved in `data/state/policy.json`). A fix is applied without a human only if its kind is `"auto"`, its confidence ≥ the threshold, and it is reversible. |
 | `set_policy(**changes) -> dict` | the new policy | Change the policy settings (unknown keys raise `ValueError`) |
 | `list_audit(incident_id: str \| None = None) -> list[dict]` | `[{"ts", "event", "incident_id", ...}]`, oldest first | Audit log: `investigated`, `policy_decision`, `fix_applied`, `verification`, `rolled_back`, `new_hypothesis`, `undo`, ... |
-| `load_eval_results() -> dict \| None` | `eval_latest.json` (below), or `None` | Sidebar `before% → after%` and the Memory Health tab |
+| `load_eval_results() -> dict \| None` | `eval_latest.json` (below), or `None` | The accuracy KPI (`before% → after%`) and the Learning tab |
 
 ## `memsre.lessons` (Tier 3)
 
@@ -210,6 +210,6 @@ After `python scripts/seed.py`:
 
 ## Tab recipes (§12)
 
-1. **Support Console:** `catalog.load_customers()` → `agent.answer(key, q)` → show `ans.answer`, `ans.used_memories` → 👎 → `diagnose.create_incident(ans, correction)`.
+1. **Support console:** `catalog.load_customers()` → `agent.answer(key, q)` → show `ans.answer`, `ans.used_memories` → 👎 → `diagnose.create_incident(ans, correction)`.
 2. **Incidents:** `store.list_incidents()` → `store.get_incident(id)` → `repair.apply_fix` / `repair.undo_fix` / `repair.reask` (each returns the updated incident).
-3. **Memory Health:** `store.load_eval_results()` + `config.DOCS_DIR / "before_after.png"` → `lessons.learned()` → `lessons.has_resolution_lesson()` → `lessons.proactive_identity_scan()` → `lessons.accept_proposal(p)`.
+3. **Learning** and **Autonomy:** `store.load_eval_results()` + `config.DOCS_DIR / "before_after.png"` → `lessons.learned()` → `lessons.has_resolution_lesson()` → `lessons.proactive_identity_scan()` → `lessons.accept_proposal(p)`.
