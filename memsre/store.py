@@ -13,6 +13,14 @@ ALIASES_FILE = config.STATE_DIR / "aliases.json"
 INCIDENTS_FILE = config.STATE_DIR / "incidents.json"
 ANSWERS_FILE = config.STATE_DIR / "answers.jsonl"
 TAG_NAMES_FILE = config.STATE_DIR / "tag_names.json"
+AUDIT_FILE = config.STATE_DIR / "audit.jsonl"
+POLICY_FILE = config.STATE_DIR / "policy.json"
+
+# Autonomy policy. A fix is applied without a human only if its kind is set to "auto", its confidence is at
+# least auto_apply_min_confidence, and it is reversible. Demo default: reactive incidents wait for approval,
+# prevented ones (patrol / watch) are applied automatically.
+DEFAULT_POLICY = {"auto_apply_min_confidence": 0.85, "reactive": "approval", "prevented": "auto",
+                  "auto_patrol_after_fix": False}
 
 _lock = threading.RLock()
 
@@ -167,15 +175,57 @@ def set_tag_names(names: dict[str, str]) -> None:
         _write_json(TAG_NAMES_FILE, dict(names))
 
 
+# --- audit.jsonl: every write, rollback, verification and policy decision -----------------------
+
+def audit(event: str, incident_id: str | None = None, **details) -> None:
+    """Append one audit record. Never raises: auditing must not break a repair."""
+    from datetime import datetime, timezone
+    try:
+        rec = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "event": event,
+               "incident_id": incident_id, **details}
+        with _lock:
+            existing = _read_text(AUDIT_FILE) if AUDIT_FILE.exists() else ""
+            _write_text(AUDIT_FILE, existing + json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    except Exception as e:
+        print(f"[audit] could not record {event}: {e}", flush=True)
+
+
+def list_audit(incident_id: str | None = None) -> list[dict]:
+    """Audit records, oldest first (optionally for one incident)."""
+    try:
+        rows = [json.loads(line) for line in _read_text(AUDIT_FILE).splitlines() if line.strip()]
+    except FileNotFoundError:
+        return []
+    return [r for r in rows if incident_id is None or r.get("incident_id") == incident_id]
+
+
+# --- policy.json -----------------------------------------------------------------------------
+
+def get_policy() -> dict:
+    return {**DEFAULT_POLICY, **_read_json(POLICY_FILE, {})}
+
+
+def set_policy(**changes) -> dict:
+    unknown = set(changes) - set(DEFAULT_POLICY)
+    if unknown:
+        raise ValueError(f"unknown policy setting(s): {', '.join(sorted(unknown))}")
+    with _lock:
+        policy = {**get_policy(), **changes}
+        _write_json(POLICY_FILE, policy)
+    audit("policy_changed", None, policy=policy)
+    return policy
+
+
 def load_eval_results() -> dict | None:
     """data/results/eval_latest.json written by scripts/eval.py, or None if it has not run yet."""
     return _read_json(config.RESULTS_DIR / "eval_latest.json", None)
 
 
 def reset_state() -> None:
-    """Empty all four state files."""
+    """Empty the four state files (and the audit log). The autonomy policy is kept."""
     with _lock:
         _write_json(ALIASES_FILE, {})
         _write_json(INCIDENTS_FILE, [])
         _write_text(ANSWERS_FILE, "")
         _write_json(TAG_NAMES_FILE, {})
+        _write_text(AUDIT_FILE, "")

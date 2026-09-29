@@ -230,10 +230,12 @@ with tab_incidents:
             b1, b2, b3, _ = st.columns([1, 1, 1, 3])
             can_fix = status == "open" and ftype not in diagnose.NO_FIX_TYPES
             if b1.button("Apply fix", type="primary", disabled=not can_fix, key="apply-fix"):
-                with st.spinner("Applying the fix in Hindsight…"):
+                with st.spinner("Applying the fix in Hindsight, then re-asking and verifying…"):
                     done = call(repair.apply_fix, inc["id"])
                     if done is not None:
-                        flash("success", f"{inc['id']} fixed. Re-ask the question to verify.")
+                        flash(*(("success", f"{inc['id']} fixed and verified. Re-ask the question to see it.")
+                                if done["status"] == "fixed" else
+                                ("warning", f"{inc['id']}: the fix did not verify and was rolled back.")))
                 if done is not None:
                     st.rerun()
             if b2.button("Undo fix", disabled=status != "fixed", key="undo-fix"):
@@ -265,6 +267,22 @@ with tab_incidents:
                 if normalize(inc["reask"]["short_answer"]) != normalize(inc["wrong_short_answer"] or ""):
                     st.success(f"The answer changed after the fix: "
                                f"{inc['wrong_short_answer']} → {inc['reask']['short_answer']}")
+
+            # Verification (Phase 2): re-asked answers judged against the correction; failed hypotheses rolled back
+            ver = inc.get("verification")
+            if ver and not ver.get("skipped"):
+                st.markdown("#### Verification")
+                (st.success if ver["passed"] else st.error)(
+                    f"Attempt {ver['attempt']}: {ver['reason']}" + ("" if ver["passed"] else " — fix rolled back"))
+                for c in ver["checks"]:
+                    st.markdown(f"- {'✅' if c['consistent'] else '❌'} *{c['question']}* → **{c['short_answer']}** "
+                                f":gray[({c['reason']})]")
+            for h in inc.get("hypotheses") or []:
+                st.caption(f"Hypothesis {h['attempt']} ({h['failure_type']}) failed verification and was rolled back.")
+            if inc.get("needs_human"):
+                st.warning("No hypothesis verified: every change was rolled back. A human needs to look at this incident.")
+            if inc.get("policy"):
+                st.caption(f"Autonomy policy: {inc['policy']['decision']} — {inc['policy']['reason']}")
 
             # 10. Applied actions
             if inc["applied_actions"]:

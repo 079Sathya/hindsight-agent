@@ -145,7 +145,46 @@ def _guidance(ctx: tools.Ctx, symptom: str) -> tuple[str, list[str], list[str]]:
 
 
 def investigate(ans: AgentAnswer, correction: str, answer_format: str | None = None) -> dict:
-    """Investigate a reported wrong answer with the tool loop; save and return the incident."""
+    """Investigate a reported wrong answer with the tool loop, save the incident, then apply the autonomy policy
+    (repair.apply_policy: auto-apply + verify only if the policy and the agent's confidence allow it)."""
+    incident = _investigate_core(ans, correction, answer_format)
+    store.add_incident(incident)
+    store.audit("investigated", incident["id"], failure_type=incident["failure_type"], fallback=incident["fallback"],
+                steps=len(incident["investigation"]["steps"]), llm_calls=incident["investigation"]["llm_calls"])
+    from . import repair   # lazy: repair imports agent/diagnose
+    return repair.apply_policy(incident, "reactive")
+
+
+def answer_from_incident(inc: dict) -> AgentAnswer:
+    """Rebuild the reported AgentAnswer from an incident (for re-investigation)."""
+    from .hs import Mem
+    used = [Mem.from_dict(m) for m in inc["used_memories"]]
+    return AgentAnswer(customer_key=inc["customer_key"], question=inc["question"], answer=inc["wrong_answer"] or "",
+                       short_answer=inc["wrong_short_answer"] or "", used_memory_ids=[m.id for m in used],
+                       used_memories=used, shown_memories=used, answer_id="")
+
+
+def next_hypothesis(inc: dict) -> dict | None:
+    """Self-correction: re-investigate with every failed hypothesis in the case file and return a new, unsaved
+    incident dict with a different explanation, or None if the agent reproduces a failed one."""
+    failed = inc.get("hypotheses") or []
+    lines = ["PREVIOUS HYPOTHESES THAT FAILED VERIFICATION (the fix was applied, the re-asked answers were still "
+             "wrong, and the fix was rolled back). Find a DIFFERENT explanation: other culprit memories, other "
+             "evidence, or another failure type."]
+    for h in failed:
+        lines.append(f"- attempt {h['attempt']}: {h['failure_type']}, culprits {h['culprit_ids']}, "
+                     f"foreign record {h.get('foreign_tag') or '-'}; still wrong: "
+                     + "; ".join(f"'{c['question']}' -> '{c['short_answer']}' ({c['reason']})" for c in h["failed_checks"]))
+    new = _investigate_core(answer_from_incident(inc), inc["correction"], inc.get("answer_format"),
+                            extra_context="\n".join(lines))
+    same = lambda h: (h["failure_type"] == new["failure_type"] and h["culprit_ids"] == [m["id"] for m in new["culprits"]]
+                      and h.get("foreign_tag") == (new["identity"] or {}).get("foreign_tag"))
+    return None if any(same(h) for h in failed) else new
+
+
+def _investigate_core(ans: AgentAnswer, correction: str, answer_format: str | None = None,
+                      extra_context: str = "") -> dict:
+    """One investigation: the tool loop, then an (unsaved) incident dict with the full trace."""
     t0 = time.monotonic()
     key = ans.customer_key
     ctx = tools.Ctx(customer_key=key, memory=config.MEMORY_ENABLED)
@@ -162,7 +201,7 @@ def investigate(ans: AgentAnswer, correction: str, answer_format: str | None = N
         "\n".join(memory_line(m) for m in ans.used_memories) or "(none)",
         "PRODUCT CATALOG:",
         catalog.catalog_text(),
-    ] + ([guidance] if guidance else []))
+    ] + ([guidance] if guidance else []) + ([extra_context] if extra_context else []))
 
     def validate_final(f) -> dict:
         """Reject verdicts the gathered evidence cannot back; the agent is told why and keeps investigating."""
@@ -214,7 +253,6 @@ def investigate(ans: AgentAnswer, correction: str, answer_format: str | None = N
         "fallback_reason": run["fallback_reason"],
         "memory": ctx.memory,
     }
-    store.add_incident(incident)
     return incident
 
 

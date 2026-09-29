@@ -109,9 +109,15 @@ Plain JSON (strings, numbers, bools, lists, dicts, `None`), safe for `st.session
 
 | Signature | Returns | Purpose |
 |---|---|---|
-| `apply_fix(incident_id: str) -> dict` | updated incident, `status == "fixed"` | **Apply fix**. Raises `ValueError` for EXECUTION/UNKNOWN. Works from `open` or `reverted`; calling it again on a `fixed` incident is a no-op. Also records a lesson (Tier 3). If a Hindsight call fails partway, the actions already taken are rolled back, the incident stays `open`, and the error is raised. |
+| `apply_fix(incident_id: str) -> dict` | updated incident | **Apply fix**: act, verify, self-correct. Applies the reversible repair, then **re-asks** the incident question and every logged question whose answer used the culprit memories (max 4), and has an LLM judge check each new answer against the correction. If any is still wrong, it **rolls the fix back**, records the failed hypothesis in `inc["hypotheses"]`, and the investigator tries its next hypothesis (max 2 attempts). Result: `status == "fixed"` with `inc["verification"]["passed"] == True`, or `status == "open"` with `inc["needs_human"] == True` and nothing left applied. Also sets `inc["reask"]` from the incident question. Raises `ValueError` for EXECUTION/UNKNOWN. Records a lesson when verified. |
 | `undo_fix(incident_id: str) -> dict` | updated incident, `status == "reverted"` | **Undo fix**. Reverses every applied action in Hindsight and local state. Raises `ValueError` unless the status is `fixed`. If some action can't be reversed, raises `RuntimeError`; retrying is safe. |
 | `reask(incident_id: str) -> dict` | updated incident with `incident["reask"]` set | **Re-ask question**. Raises `ValueError` if `question` is `None`. |
+
+| `verify_fix(inc: dict) -> dict` | `{"passed", "skipped", "reason", "checks": [{"customer_key", "question", "answer", "short_answer", "answer_id", "consistent", "reason"}]}` | The verification step used by `apply_fix` (re-asks + judge) |
+| `policy_decision(inc: dict, kind: str) -> dict` | `{"decision": "auto" or "approval", "kind", "confidence", "reason"}` | Autonomy policy for `kind` = `"reactive"` or `"prevented"` |
+| `apply_policy(inc: dict, kind: str = "reactive") -> dict` | updated incident | Stores `inc["policy"]` and, if the decision is `auto`, runs `apply_fix`. `create_incident` calls this automatically. |
+
+Incident keys added by verification: `verification` (as above, plus `attempt`), `hypotheses` (`[{"attempt", "failure_type", "culprit_ids", "foreign_tag", "actions", "failed_checks"}]`), `needs_human` (bool), and `policy`.
 
 Button rules [§12]:
 - **Apply fix** is enabled when `status == "open"` and `failure_type not in NO_FIX_TYPES`.
@@ -127,6 +133,9 @@ Button rules [§12]:
 | `get_incident(incident_id: str) -> dict \| None` | incident, or `None` | Reload the selected incident after an action |
 | `alias_pairs() -> list[tuple[str, str]]` | e.g. `[("anvaya", "kestrel")]` | Sidebar "linked identities" count: `len(...)` |
 | `list_answers() -> list[dict]` | answer log records, oldest first | Sidebar "answers logged" count: `len(...)` |
+| `get_policy() -> dict` | `{"auto_apply_min_confidence": 0.85, "reactive": "approval", "prevented": "auto", "auto_patrol_after_fix": False}` | The autonomy policy (saved in `data/state/policy.json`). A fix is applied without a human only if its kind is `"auto"`, its confidence ≥ the threshold, and it is reversible. |
+| `set_policy(**changes) -> dict` | the new policy | Change the policy settings (unknown keys raise `ValueError`) |
+| `list_audit(incident_id: str \| None = None) -> list[dict]` | `[{"ts", "event", "incident_id", ...}]`, oldest first | Audit log: `investigated`, `policy_decision`, `fix_applied`, `verification`, `rolled_back`, `new_hypothesis`, `undo`, ... |
 | `load_eval_results() -> dict \| None` | `eval_latest.json` (below), or `None` | Sidebar `before% → after%` and the Memory Health tab |
 
 ## `memsre.lessons` (Tier 3)

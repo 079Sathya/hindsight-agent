@@ -22,7 +22,7 @@ SAME = {"foreign_tag": "customer:anvaya", "foreign_name": "Anvaya Technologies P
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    for name in ("ALIASES_FILE", "INCIDENTS_FILE", "ANSWERS_FILE", "TAG_NAMES_FILE"):
+    for name in ("ALIASES_FILE", "INCIDENTS_FILE", "ANSWERS_FILE", "TAG_NAMES_FILE", "AUDIT_FILE", "POLICY_FILE"):
         monkeypatch.setattr(store, name, tmp_path / getattr(store, name).name)
     store.reset_state()
     store.set_tag_names({"customer:kestrel": "Kestrel Logistics", "customer:anvaya": "Anvaya Technologies Pvt Ltd"})
