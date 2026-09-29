@@ -248,8 +248,9 @@ def _investigate_core(ans: AgentAnswer, correction: str, answer_format: str | No
         supporting = [i for i in _as_ids(f.get("supporting_ids")) if i in ctx.seen and i not in ans.used_memory_ids]
         searched_bank = any(t in ctx.used_tools for t in ("recall_whole_bank", "find_records_sharing"))
         if ftype in ("RESOLUTION", "FRESHNESS", "RECALL_MISS", "EXECUTION") and not supporting:
+            hint = ("" if searched_bank else " Start with recall_whole_bank for the corrected fact.")
             raise _Pushback(f"a {ftype} verdict needs supporting_ids: memories you were shown that prove the "
-                            "correction. Find them first (they may be filed under another customer tag)")
+                            f"correction. Find them first (they may be filed under another customer tag).{hint}")
         if ftype == "RESOLUTION" and "compare_records" not in ctx.used_tools:
             raise _Pushback("a RESOLUTION verdict needs a compare_records check of the two customer records first")
         if ftype in ("MISSING_KNOWLEDGE", "UNKNOWN") and not searched_bank:
@@ -257,7 +258,13 @@ def _investigate_core(ans: AgentAnswer, correction: str, answer_format: str | No
                             "(recall_whole_bank), since it may be filed under another customer name")
         own = set(store.customer_tags(key))
         foreign_seen = sorted({t for m in ctx.seen.values() for t in m.tags if t.startswith("customer:")} - own)
-        checked = any(t in ctx.used_tools for t in ("compare_records", "find_records_sharing"))
+        compared = {b for (a, b) in ctx.compares if a == key} | {a for (a, b) in ctx.compares if b == key}
+        open_leads = sorted(t for t in ctx.leads if t.split(":", 1)[1] not in compared)
+        checked = "compare_records" in ctx.used_tools or ("find_records_sharing" in ctx.used_tools and not ctx.leads)
+        if ftype in ("MISSING_KNOWLEDGE", "UNKNOWN") and open_leads:
+            raise _Pushback(f"find_records_sharing showed that {', '.join(open_leads)} share(s) a concrete signal with this "
+                            f"customer. Follow the lead: compare_records(tag_a='customer:{key}', tag_b='{open_leads[0]}') "
+                            "before concluding the fact is missing")
         if ftype in ("MISSING_KNOWLEDGE", "UNKNOWN") and foreign_seen and not checked:
             raise _Pushback(f"your searches returned records filed under other customer tags ({', '.join(foreign_seen[:5])}). "
                             "Before concluding the fact is missing, rule out that the record stating the corrected fact "

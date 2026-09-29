@@ -143,6 +143,25 @@ def test_premature_verdicts_are_pushed_back_not_counted_as_failures(env, monkeyp
     assert tools_used == ["verdict_rejected", "verdict_rejected", "recall_whole_bank", "compare_records", "final"]
 
 
+def test_a_lead_from_find_records_sharing_must_be_followed(env, monkeypatch):
+    # Kestrel's own admin uses @anvaya.in; the shared-signal search surfaces customer:anvaya as a lead.
+    shared = [{"id": "k9", "fact_type": "world", "text": "Admin ravi.k@anvaya.in for Kestrel.", "tags": ["customer:kestrel"]},
+              {"id": "f1", "fact_type": "world", "text": FOREIGN.text + " accounts@anvaya.in", "tags": ["customer:anvaya"]}]
+    monkeypatch.setattr(hs, "list_memories", lambda *a, **k: shared)
+    missing = {"thought": "nothing about Growth", "final": {**FINAL, "failure_type": "MISSING_KNOWLEDGE", "supporting_ids": []}}
+    script(monkeypatch, [
+        {"thought": "look", "action": {"tool": "recall_whole_bank", "args": {"query": "Growth"}}},
+        {"thought": "domain", "action": {"tool": "find_records_sharing", "args": {"signal_type": "email_domain", "value": "anvaya.in"}}},
+        missing,                                                                  # pushed back: open lead
+        {"thought": "follow the lead", "action": {"tool": "compare_records", "args": {"tag_a": "kestrel", "tag_b": "anvaya"}}},
+        {"thought": "done", "final": FINAL},
+    ])
+    inc = diagnose.create_incident(answer(), "Wrong: Growth since August.")
+    steps = inc["investigation"]["steps"]
+    assert steps[2]["tool"] == "verdict_rejected" and "customer:anvaya" in steps[2]["result_summary"]
+    assert inc["failure_type"] == "RESOLUTION" and inc["fallback"] is False
+
+
 def test_force_pipeline_flag(env, monkeypatch):
     monkeypatch.setattr(diagnose, "FORCE_PIPELINE", True)
     script(monkeypatch, [])

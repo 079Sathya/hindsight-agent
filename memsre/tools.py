@@ -38,6 +38,7 @@ class Ctx:
     rejected_values: set[str] = field(default_factory=set)
     llm_calls: int = 0                                    # LLM calls made inside tools (identity checks)
     used_tools: list[str] = field(default_factory=list)
+    leads: set[str] = field(default_factory=set)          # other customers' tags that share a signal with this one
 
 
 @dataclass
@@ -152,6 +153,10 @@ def find_records_sharing(ctx: Ctx, signal_type: str, value: str) -> str:
     for ms in by_tag.values():
         for m in ms:
             ctx.seen[m.id] = m
+    if ctx.customer_key:
+        own = set(store.customer_tags(ctx.customer_key))
+        if set(by_tag) & own:   # the signal is this customer's own: every other record sharing it is a lead
+            ctx.leads |= {t for t in by_tag if t.startswith("customer:") and t not in own}
     if not by_tag:
         return f"no records contain {signal_type} '{value}'"
     return "\n".join(
