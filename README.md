@@ -73,7 +73,7 @@ venv\Scripts\activate
 python -m pip install -r requirements.txt
 copy .env.example .env          # then fill in HINDSIGHT_API_KEY and GROQ_API_KEY (or GROQ_API_KEYS)
 python scripts/smoke.py         # -> SMOKE OK
-python scripts/seed.py          # fresh demo bank -> SEEDED 26 events (waits for Hindsight recall to settle)
+python scripts/seed.py          # fresh demo bank -> SEEDED 34 events (waits for Hindsight recall to settle)
 streamlit run app.py
 python scripts/eval.py          # optional: reseeds AND repairs the bank to rebuild the chart and eval_latest.json
                                 # (an estimated ~80k Groq tokens); run seed.py again before a demo
@@ -93,13 +93,14 @@ pytest
    - root cause **RESOLUTION**, and a blast radius of 2.
 
    Then click **Apply fix** → **Re-ask question**. The answer changes from Yes to **No**, because Kestrel is now on the Growth plan, which doesn't include audit log export.
-3. In **Memory Health**, check the lessons learned, then click **Run proactive scan**. It proposes **Saffron Retail ≡ Mehta Brothers Trading LLP**. Click **Link identities**, and the incident is recorded as "Prevented".
-4. Finish on the before/after chart.
+3. In **Memory Health**, check the lessons learned, then click **Run proactive scan**. Using the lesson from the Kestrel incident, it proposes three identity splits that no customer has hit yet: **Saffron Retail ≡ Mehta Brothers Trading LLP**, **Monsoon Trails ≡ Ruparel Holidays Pvt Ltd** and **Neelgiri Organics ≡ Kaveri Agro Foods LLP**. Click **Accept all**, and each is recorded as "Prevented".
+4. The **Learning curve** now reads 2 → 0 → 0 → 0: the first identity split reached customers, and every later one was prevented before any wrong answer.
+5. Finish on the before/after chart.
 
 ## Limitations
 
 - The demo data is a fictional company.
-- The defects are realistic but planted.
+- The defects are realistic but planted. The seed data holds four identity splits: Kestrel and Saffron, plus Monsoon Trails and Neelgiri Organics, which were added after the committed evaluation run and are not covered by its 20 questions.
 - Diagnosis needs a correction from a human.
 - Identity linking relies on concrete evidence such as email domains.
 - EXECUTION failures are reported, not auto-fixed.

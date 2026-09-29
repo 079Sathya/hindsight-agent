@@ -6,3 +6,4 @@ streamlit>=1.37.0
 pandas>=2.0.0
 matplotlib>=3.8.0
 pytest>=8.0.0
+plotly>=5.20.0

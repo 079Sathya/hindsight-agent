@@ -4,5 +4,7 @@
   {"key": "pinecrest", "name": "Pinecrest Hospitals"},
   {"key": "quartz",    "name": "Quartz Mobility"},
   {"key": "vanadium",  "name": "Vanadium Energy"},
-  {"key": "tidewater", "name": "Tidewater Foods"}
+  {"key": "tidewater", "name": "Tidewater Foods"},
+  {"key": "monsoon",   "name": "Monsoon Trails"},
+  {"key": "neelgiri",  "name": "Neelgiri Organics"}
 ]

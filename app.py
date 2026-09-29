@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from memsre import agent, catalog, config, diagnose, lessons, repair, store
@@ -41,6 +42,29 @@ def memory_table(mems) -> None:
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
     else:
         st.caption("No memories were used.")
+
+
+def learning_curve_figure(points: list[dict]) -> go.Figure:
+    """x = incidents in order, y = wrong answers customers saw before the fix; reactive vs prevented; lesson marker."""
+    xs = list(range(1, len(points) + 1))
+    colors = ["#f59e0b" if p["kind"] == "reactive" else "#22c55e" for p in points]
+    fig = go.Figure(go.Scatter(
+        x=xs, y=[p["wrong_answers"] for p in points], mode="lines+markers+text",
+        line={"color": "#94a3b8", "width": 2}, marker={"size": 14, "color": colors, "line": {"width": 2, "color": "white"}},
+        text=[f"{p['wrong_answers']} wrong" if p["kind"] == "reactive" else "prevented" for p in points],
+        textposition="top center",
+        customdata=[[p["id"], p["customer_name"], p["kind"]] for p in points],
+        hovertemplate="%{customdata[0]} · %{customdata[1]}<br>%{customdata[2]}: %{y} wrong answers<extra></extra>"))
+    for x, p in zip(xs, points):
+        if p["lesson_learned"]:
+            fig.add_vline(x=x + 0.5, line={"dash": "dash", "color": "#a78bfa"})
+            fig.add_annotation(x=x + 0.5, y=max(pp["wrong_answers"] for pp in points) or 1, text="Lesson learned",
+                               showarrow=False, xanchor="left", yanchor="bottom", font={"color": "#a78bfa"})
+    fig.update_layout(
+        height=320, margin={"l": 40, "r": 20, "t": 30, "b": 40}, showlegend=False,
+        xaxis={"tickmode": "array", "tickvals": xs, "ticktext": [f"{p['id']}<br>{p['customer_name']}" for p in points]},
+        yaxis={"title": "Wrong answers customers saw", "rangemode": "tozero", "dtick": 1})
+    return fig
 
 
 for k, v in {"last_answer": None, "show_report": False, "selected_incident": None,
@@ -266,6 +290,16 @@ with tab_health:
         st.info("No evaluation yet. Run `python scripts/eval.py` in a terminal.")
 
     st.divider()
+    st.subheader("Learning curve")
+    points = call(lessons.learning_curve) or []
+    if points:
+        st.plotly_chart(learning_curve_figure(points), width="stretch")
+        st.caption("First identity split reached customers. After Memory SRE learned from it, every later one "
+                   "was prevented before any wrong answer.")
+    else:
+        st.caption("No incidents yet. The curve starts with the first reported wrong answer.")
+
+    st.divider()
     st.subheader("What Memory SRE has learned")
     learned = call(lessons.learned) or []
     if learned:
@@ -288,6 +322,12 @@ with tab_health:
     if proposals == []:
         st.info("No unlinked identities found.")
     linked = {tuple(sorted(pair)) for pair in (call(store.alias_pairs) or [])}
+    pending = [p for p in proposals or [] if tuple(sorted((p["a"], p["b"]))) not in linked]
+    if len(pending) > 1 and st.button(f"Accept all ({len(pending)})", type="primary", key="accept-all"):
+        with st.spinner(f"Linking {len(pending)} identities in Hindsight…"):
+            done = call(lessons.accept_all, pending)
+        if done is not None:
+            st.rerun()   # every card then shows Prevented
     for p in proposals or []:
         with st.container(border=True):
             st.markdown(f"**{p['name_a']} ≡ {p['name_b']}**")

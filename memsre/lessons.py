@@ -77,6 +77,29 @@ def proactive_identity_scan() -> list[dict]:
     return proposals
 
 
+def accept_all(proposals) -> list[dict]:
+    """Accept every proposal whose pair is not linked yet. Returns the new 'prevented' incidents."""
+    return [accept_proposal(p) for p in proposals if p["b"] not in store.get_alias_keys(p["a"])]
+
+
+def learning_curve() -> list[dict]:
+    """One point per incident, oldest first, from incidents.json (no LLM or Hindsight calls).
+
+    wrong_answers is how many answers customers saw before the fix (the blast radius; 0 for prevented incidents).
+    lesson_learned marks the first incident that was fixed reactively, which is when the first lesson was recorded."""
+    points, learned = [], False
+    for inc in reversed(store.list_incidents()):
+        prevented = inc["status"] == "prevented"
+        point = {"id": inc["id"], "customer_name": inc["customer_name"], "failure_type": inc["failure_type"],
+                 "status": inc["status"], "kind": "prevented" if prevented else "reactive",
+                 "wrong_answers": 0 if prevented else inc["blast_radius"]["answers_affected"],
+                 "lesson_learned": False}
+        if not learned and not prevented and inc["status"] in ("fixed", "reverted"):
+            point["lesson_learned"] = learned = True
+        points.append(point)
+    return points
+
+
 def accept_proposal(p) -> dict:
     """Link a proposed identity pair before any wrong answer; returns the 'prevented' incident."""
     if p["b"] in store.get_alias_keys(p["a"]):

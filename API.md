@@ -9,7 +9,7 @@ Everything `app.py` needs is below. The UI should call only these functions and 
 - **Repairs wait for Hindsight.** `apply_fix`, `undo_fix` and `accept_proposal` only return once that customer's recall reflects the change (at most 90 s). Some Hindsight Cloud servers lag behind writes, and without this wait an immediate **Re-ask** could read stale memory.
 - **Groq quota.** The free tier allows 200k tokens per day per Groq *organization*. One `scripts/eval.py` run uses about 80k, and a live demo about 15k. With two keys from different Groq accounts in `GROQ_API_KEYS=key1,key2`, a key that hits its limit is skipped automatically.
 - **LLM cache.** Identical prompts are answered from `data/cache/llm_cache.json`, so repeating a demo step on an unchanged bank is instant and free.
-- **Reset** is done in a terminal with `python scripts/seed.py`, not from the UI [§12 sidebar note]. It takes about 3–4 minutes, plus up to 30 minutes waiting for Hindsight recall to settle; it prints `still settling` while it waits. Start recording only after it prints `SEEDED 26 events`.
+- **Reset** is done in a terminal with `python scripts/seed.py`, not from the UI [§12 sidebar note]. It takes about 3–4 minutes, plus up to 30 minutes waiting for Hindsight recall to settle; it prints `still settling` while it waits. Start recording only after it prints `SEEDED 34 events`.
 - **Errors.** Every function raises an exception whose `str(e)` is readable, so wrap each call in `try/except Exception as e: st.error(str(e))` [§12].
   | Exception | When |
   |---|---|
@@ -134,6 +134,8 @@ Button rules [§12]:
 | `learned(limit: int = 10) -> list[dict]` | `[{"text": str, "proof_count": int}, ...]`, e.g. `{"text": "Kestrel Logistics and Anvaya Technologies Pvt Ltd are the same customer entity.", "proof_count": 1}` | "What Memory SRE has learned" list (Hindsight's consolidated observations; empty until the first fix) |
 | `has_resolution_lesson() -> bool` | | Enables **Run proactive scan**. Becomes `True` after the first RESOLUTION fix. |
 | `proactive_identity_scan() -> list[dict]` | proposals (below); `[]` if none | **Run proactive scan**. Store the result in `st.session_state` so the cards survive reruns. |
+| `accept_all(proposals: list[dict]) -> list[dict]` | the new `prevented` incidents | **Accept all**: accepts every proposal whose pair isn't linked yet (skips linked ones) |
+| `learning_curve() -> list[dict]` | `[{"id", "customer_name", "failure_type", "status", "kind": "reactive" or "prevented", "wrong_answers": int, "lesson_learned": bool}, ...]`, oldest first | **Learning curve** chart. Built from `incidents.json` only (no LLM or Hindsight calls). `wrong_answers` is the blast radius, and 0 for prevented incidents. `lesson_learned` marks the first reactively fixed incident. |
 | `accept_proposal(p: dict) -> dict` | the new incident (`status == "prevented"`) | **Link identities** on a proposal card, then `st.success("Prevented: linked before any wrong answer.")`. Raises `ValueError` if the pair is already linked (e.g. on a double click). |
 
 Proposal dict: `{"a": "saffron", "b": "mehta-bros", "name_a": "Saffron Retail", "name_b": "Mehta Brothers Trading LLP", "confidence": 0.95, "linking_evidence": str, "shared_domain": "mehtabros.co.in", "reason": str}`. Card title: `f"{p['name_a']} ≡ {p['name_b']}"`.
@@ -162,8 +164,8 @@ After `python scripts/seed.py`:
 1. `agent.answer("kestrel", "Can Kestrel Logistics export audit logs?")` gives `short_answer "Yes"`, which is wrong.
 2. `diagnose.create_incident(ans, correction)` gives `failure_type "RESOLUTION"`, with `identity.foreign_tag "customer:anvaya"`, confidence 0.95, and linking evidence quoting `ravi.k@anvaya.in` and `accounts@anvaya.in`.
 3. `repair.apply_fix(id)` then `repair.reask(id)` gives `"No, … now on the Growth plan …"`. `repair.undo_fix(id)` then `repair.reask(id)` gives `"Yes"` again.
-4. After that fix, `lessons.has_resolution_lesson()` is `True`, and `lessons.proactive_identity_scan()` returns one proposal: Saffron Retail ≡ Mehta Brothers Trading LLP (`mehtabros.co.in`, 0.95).
-5. `lessons.accept_proposal(p)` creates a `prevented` incident. Asking "Can Saffron Retail enable SSO?" then changes from "No" to "Yes".
+4. After that fix, `lessons.has_resolution_lesson()` is `True`, and `lessons.proactive_identity_scan()` returns three proposals: Saffron Retail ≡ Mehta Brothers Trading LLP (`mehtabros.co.in`), Monsoon Trails ≡ Ruparel Holidays Pvt Ltd (`ruparelholidays.in`) and Neelgiri Organics ≡ Kaveri Agro Foods LLP (`kaveriagro.co.in`).
+5. `lessons.accept_all(proposals)`, or `accept_proposal(p)` for each, creates `prevented` incidents. Asking "Can Saffron Retail enable SSO?" then changes from "No" to "Yes", and `lessons.learning_curve()` gives wrong answers 2, 0, 0, 0.
 
 ## Tab recipes (§12)
 
