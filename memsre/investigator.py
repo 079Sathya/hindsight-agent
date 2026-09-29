@@ -116,7 +116,21 @@ def _working_memory(ctx: tools.Ctx, turns_left: int) -> str:
         if open_leads:
             lines.append("OPEN LEADS (records that share a concrete signal with this customer, not yet checked with "
                          f"compare_records): {', '.join(open_leads)}")
+    confirmed = _confirmed_same(ctx)
+    if confirmed:
+        lines.append("CONFIRMED SAME CUSTOMER (compare_records): " + ", ".join(confirmed) + " — search these records for "
+                     "the corrected fact with recall_customer; the product catalog says what each plan includes")
     return "\n".join(lines)
+
+
+def _confirmed_same(ctx: tools.Ctx) -> list[str]:
+    """Other customer records that compare_records confirmed are this same customer."""
+    key = ctx.customer_key
+    out = set()
+    for (a, b), res in ctx.compares.items():
+        if key in (a, b) and (res or {}).get("same_customer"):
+            out.add(f"customer:{b if a == key else a}")
+    return sorted(out)
 
 
 def run_loop(case: str, final_schema: str, ctx: tools.Ctx, validate_final, *, max_steps: int = MAX_STEPS,
@@ -263,6 +277,8 @@ def _investigate_core(ans: AgentAnswer, correction: str, answer_format: str | No
         catalog.catalog_text(),
     ] + ([guidance] if guidance else []) + ([extra_context] if extra_context else []))
 
+    nudged: set[str] = set()
+
     def validate_final(f) -> dict:
         """Reject verdicts the gathered evidence cannot back; the agent is told why and keeps investigating."""
         if not isinstance(f, dict):
@@ -289,6 +305,13 @@ def _investigate_core(ans: AgentAnswer, correction: str, answer_format: str | No
         if ftype in ("MISSING_KNOWLEDGE", "UNKNOWN") and open_leads:
             raise _Pushback(f"find_records_sharing showed that {', '.join(open_leads)} share(s) a concrete signal with this "
                             f"customer. Follow the lead: compare_records(tag_a='customer:{key}', tag_b='{open_leads[0]}') "
+                            "before concluding the fact is missing")
+        unsearched = [t for t in _confirmed_same(ctx) if t not in nudged]
+        if ftype in ("MISSING_KNOWLEDGE", "UNKNOWN") and unsearched:
+            nudged.update(unsearched)   # once per record: if it truly lacks the fact, the next verdict stands
+            raise _Pushback(f"compare_records confirmed {', '.join(unsearched)} is this same customer. Its records may "
+                            f"state the corrected fact (e.g. a plan change); search them with recall_customer("
+                            f"customer='{unsearched[0]}', ...) and use the product catalog for what a plan includes, "
                             "before concluding the fact is missing")
         if ftype in ("MISSING_KNOWLEDGE", "UNKNOWN") and foreign_seen and not checked:
             raise _Pushback(f"your searches returned records filed under other customer tags ({', '.join(foreign_seen[:5])}). "

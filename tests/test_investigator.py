@@ -201,6 +201,26 @@ def test_phone_search_matches_any_formatting(env, monkeypatch):
         tools.find_records_sharing(ctx, "phone", "12-34")
 
 
+def test_a_confirmed_identity_must_be_searched_before_missing_knowledge(env, monkeypatch):
+    # The live failure: compare_records confirmed Kestrel == Anvaya, but the agent never read Anvaya's records and
+    # concluded MISSING_KNOWLEDGE. That verdict is pushed back once, with the record to search.
+    prompts = []
+    missing = {"thought": "cannot find it", "final": {**FINAL, "failure_type": "MISSING_KNOWLEDGE", "supporting_ids": []}}
+    replies = iter([
+        {"thought": "look", "action": {"tool": "recall_whole_bank", "args": {"query": "Growth"}}},
+        {"thought": "compare", "action": {"tool": "compare_records", "args": {"tag_a": "kestrel", "tag_b": "anvaya"}}},
+        missing,                                                              # pushed back: search the confirmed record
+        {"thought": "read it", "action": {"tool": "recall_customer", "args": {"customer": "customer:anvaya", "query": "plan"}}},
+        {"thought": "done", "final": FINAL},
+    ])
+    monkeypatch.setattr(investigator, "llm_json", lambda system, user, **kw: prompts.append(user) or next(replies))
+    inc = diagnose.create_incident(answer(), "Wrong: Growth since August.")
+    steps = inc["investigation"]["steps"]
+    assert steps[2]["tool"] == "verdict_rejected" and "recall_customer" in steps[2]["result_summary"]
+    assert "CONFIRMED SAME CUSTOMER (compare_records): customer:anvaya" in prompts[2]
+    assert inc["failure_type"] == "RESOLUTION" and inc["fallback"] is False
+
+
 def test_force_pipeline_flag(env, monkeypatch):
     monkeypatch.setattr(diagnose, "FORCE_PIPELINE", True)
     script(monkeypatch, [])
