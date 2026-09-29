@@ -336,6 +336,19 @@ with tab_health:
         st.markdown("\n".join(f"- {l['text']} :gray[(proof count {l['proof_count']})]" for l in learned))
     else:
         st.caption("No lessons yet. A lesson is recorded each time a fix is applied.")
+    rules = call(lessons.learned_rules) or []
+    if rules:
+        st.markdown("**Detection rules Memory SRE wrote for itself**")
+        st.markdown("\n".join(f"- `{r['id']}` · signal `{r['signal_type']}` — {r['text']}" for r in rules))
+    rejected = call(lessons.exceptions) or []
+    if rejected:
+        st.markdown("**Rejected patterns (reviewer feedback)**")
+        st.markdown("\n".join(f"- `{e['value']}` — {e['text']}" for e in rejected))
+    pb = call(lessons.playbook)
+    if pb and pb.get("content"):
+        with st.expander(f"Living playbook · {pb['name']} · refreshed {str(pb.get('last_refreshed_at') or '')[:19]}"
+                         f" · {len(call(lessons.playbook_history) or [])} earlier versions"):
+            st.markdown(pb["content"])
 
     has_lesson = bool(call(lessons.has_resolution_lesson))
     if not has_lesson:
@@ -363,14 +376,28 @@ with tab_health:
             st.markdown(f"**{p['name_a']} ≡ {p['name_b']}**")
             st.markdown(f"Shared domain: `{p['shared_domain']}` · confidence {p['confidence']:.2f}")
             st.markdown(f"> {p['linking_evidence']}")
+            pair = f"{p['a']}|{p['b']}"
             if tuple(sorted((p["a"], p["b"]))) in linked:
                 st.success("Prevented: linked before any wrong answer.")
-            elif st.button("Link identities", key=f"link-{p['a']}|{p['b']}"):
-                with st.spinner("Linking identities in Hindsight…"):
-                    inc = call(lessons.accept_proposal, p)
-                if inc is not None:
-                    st.session_state["selected_incident"] = inc["id"]
-                    st.rerun()   # refresh the Incidents tab and the lessons list; the card then shows Prevented
+            elif pair in st.session_state.setdefault("rejected_pairs", set()):
+                st.info("Rejected: retained as a rule exception, so this pattern is not proposed again.")
+            else:
+                link_col, reject_col = st.columns([1, 3])
+                if link_col.button("Link identities", key=f"link-{pair}"):
+                    with st.spinner("Linking identities in Hindsight…"):
+                        inc = call(lessons.accept_proposal, p)
+                    if inc is not None:
+                        st.session_state["selected_incident"] = inc["id"]
+                        st.rerun()   # refresh the Incidents tab and the lessons list; the card then shows Prevented
+                with reject_col:
+                    reason = st.text_input("Reason to reject", key=f"reason-{pair}",
+                                           placeholder="e.g. shared IT vendor domain, not the customer's own")
+                    if st.button("Reject", key=f"reject-{pair}"):
+                        with st.spinner("Recording the rejection as a lesson…"):
+                            done = call(lessons.reject_proposal, p, reason)
+                        if done is not None:
+                            st.session_state["rejected_pairs"].add(pair)
+                            st.rerun()
 
 # ---------------------------------------------------------------- Sidebar (last, so counts include this run's actions)
 with st.sidebar:

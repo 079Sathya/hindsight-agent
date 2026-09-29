@@ -45,7 +45,9 @@ def seed(keep_lessons: bool = False) -> int:
     config.check()
     hs.reset_bank(config.MAIN_BANK_ID, name="Lumora Support Memory", retain_mission=MAIN_RETAIN_MISSION)
     if not keep_lessons:
+        from memsre import lessons
         hs.reset_bank(config.LESSONS_BANK_ID, name="Memory SRE Lessons", retain_mission=LESSONS_RETAIN_MISSION)
+        lessons.reset_playbook_model()   # the living playbook must not outlive the lessons it summarises
 
     events = catalog.load_events()
     for k, ev in enumerate(events, 1):

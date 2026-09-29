@@ -184,9 +184,13 @@ def delete_document(bank_id, document_id) -> None:
     _rest("DELETE", bank_id, f"/documents/{quote(document_id, safe='')}", ignore_404=True)
 
 
-def list_memories(bank_id, type=None, q=None, state=None, limit=100) -> list[dict]:
-    data = _rest("GET", bank_id, "/memories/list",
-                 params={"type": type, "q": q, "state": state, "limit": limit, "offset": 0})
+def list_memories(bank_id, type=None, q=None, state=None, limit=100, tags=None) -> list[dict]:
+    """List memory units (database-backed, so consistent right after a write, unlike recall).
+    tags: only units carrying at least one of them (any_strict)."""
+    params = {"type": type, "q": q, "state": state, "limit": limit, "offset": 0}
+    if tags:
+        params.update(tags=list(tags), tags_match="any_strict")
+    data = _rest("GET", bank_id, "/memories/list", params=params)
     return list((data or {}).get("items") or [])
 
 

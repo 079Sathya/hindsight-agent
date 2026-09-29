@@ -73,7 +73,7 @@ venv\Scripts\activate
 python -m pip install -r requirements.txt
 copy .env.example .env          # then fill in HINDSIGHT_API_KEY and GROQ_API_KEY (or GROQ_API_KEYS)
 python scripts/smoke.py         # -> SMOKE OK
-python scripts/seed.py          # fresh demo bank -> SEEDED 34 events (waits for Hindsight recall to settle)
+python scripts/seed.py          # fresh demo bank -> SEEDED 36 events (waits for Hindsight recall to settle)
 streamlit run app.py
 python scripts/eval.py          # optional: reseeds AND repairs the bank to rebuild the chart and eval_latest.json
                                 # (an estimated ~80k Groq tokens); run seed.py again before a demo

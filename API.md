@@ -9,7 +9,7 @@ Everything `app.py` needs is below. The UI should call only these functions and 
 - **Repairs wait for Hindsight.** `apply_fix`, `undo_fix` and `accept_proposal` only return once that customer's recall reflects the change (at most 90 s). Some Hindsight Cloud servers lag behind writes, and without this wait an immediate **Re-ask** could read stale memory.
 - **Groq quota.** The free tier allows 200k tokens per day per Groq *organization*. One `scripts/eval.py` run uses about 80k, and a live demo about 15k. With two keys from different Groq accounts in `GROQ_API_KEYS=key1,key2`, a key that hits its limit is skipped automatically.
 - **LLM cache.** Identical prompts are answered from `data/cache/llm_cache.json`, so repeating a demo step on an unchanged bank is instant and free.
-- **Reset** is done in a terminal with `python scripts/seed.py`, not from the UI [§12 sidebar note]. It takes about 3–4 minutes, plus up to 30 minutes waiting for Hindsight recall to settle; it prints `still settling` while it waits. Start recording only after it prints `SEEDED 34 events`.
+- **Reset** is done in a terminal with `python scripts/seed.py`, not from the UI [§12 sidebar note]. It takes about 3–4 minutes, plus up to 30 minutes waiting for Hindsight recall to settle; it prints `still settling` while it waits. Start recording only after it prints `SEEDED 36 events`.
 - **Errors.** Every function raises an exception whose `str(e)` is readable, so wrap each call in `try/except Exception as e: st.error(str(e))` [§12].
   | Exception | When |
   |---|---|
@@ -145,6 +145,14 @@ Button rules [§12]:
 | `learned(limit: int = 10) -> list[dict]` | `[{"text": str, "proof_count": int}, ...]`, e.g. `{"text": "Kestrel Logistics and Anvaya Technologies Pvt Ltd are the same customer entity.", "proof_count": 1}` | "What Memory SRE has learned" list (Hindsight's consolidated observations; empty until the first fix) |
 | `has_resolution_lesson() -> bool` | | Enables **Run proactive scan**. Becomes `True` after the first RESOLUTION fix. |
 | `proactive_identity_scan() -> list[dict]` | proposals (below); `[]` if none | **Run proactive scan**. Store the result in `st.session_state` so the cards survive reruns. |
+| `learned_rules() -> list[dict]` | `[{"id": "rule-INC-001", "signal_type": "email_domain", "text": str}]` | Detection rules the post-mortems wrote, read from Hindsight. The scan's checks come only from these. |
+| `rule_candidates(rules=None) -> tuple[int, list[dict]]` | `(checks_run, [{"a", "b", "signal_type", "value", "values", "rule_id"}])` | The rules run as cheap deterministic checks. With an empty lessons bank this returns `(0, [])`. |
+| `reject_proposal(p: dict, reason: str) -> dict` | `{"pair", "signal_type", "value", "reason", "exception_id"}` | **Reject**: undoes the link if it was applied, and retains the rejection as a rule exception so the pattern isn't proposed again |
+| `exceptions() -> list[dict]` | `[{"id", "signal_type", "value", "pair", "text"}]` | Rejected patterns (reviewer feedback) |
+| `playbooks(symptom: str = "", limit: int = 2) -> list[dict]` | `[{"id": "playbook-INC-001", "text"}]` | Procedural memory: proven investigation paths from verified incidents |
+| `playbook() -> dict \| None` | `{"id", "name", "content", "last_refreshed_at", "is_stale"}` | The living **Memory SRE Playbook** (a Hindsight mental model in the lessons bank, refreshed after each post-mortem) |
+| `playbook_history() -> list[dict]` | earlier versions, as Hindsight returns them | Version history of the living playbook |
+| `investigation_guidance(symptom: str) -> dict` | `{"text", "lessons_block", "playbook_ids", "rule_ids", "rejected_values"}` | What the investigator starts from (used internally) |
 | `accept_all(proposals: list[dict]) -> list[dict]` | the new `prevented` incidents | **Accept all**: accepts every proposal whose pair isn't linked yet (skips linked ones) |
 | `learning_curve() -> list[dict]` | `[{"id", "customer_name", "failure_type", "status", "kind": "reactive" or "prevented", "wrong_answers": int, "lesson_learned": bool}, ...]`, oldest first | **Learning curve** chart. Built from `incidents.json` only (no LLM or Hindsight calls). `wrong_answers` is the blast radius, and 0 for prevented incidents. `lesson_learned` marks the first reactively fixed incident. |
 | `accept_proposal(p: dict) -> dict` | the new incident (`status == "prevented"`) | **Link identities** on a proposal card, then `st.success("Prevented: linked before any wrong answer.")`. Raises `ValueError` if the pair is already linked (e.g. on a double click). |

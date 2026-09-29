@@ -129,6 +129,20 @@ def test_guardrails_verify_identity_and_classify_wins(env, monkeypatch):
     assert inc["investigation"]["agent_failure_type"] == "EXECUTION"
 
 
+def test_premature_verdicts_are_pushed_back_not_counted_as_failures(env, monkeypatch):
+    guess = {"thought": "guess", "final": {**FINAL, "supporting_ids": []}}          # no evidence yet
+    script(monkeypatch, [
+        guess, guess,                                                              # two rejections in a row
+        {"thought": "search", "action": {"tool": "recall_whole_bank", "args": {"query": "Growth"}}},
+        {"thought": "verify", "action": {"tool": "compare_records", "args": {"tag_a": "kestrel", "tag_b": "anvaya"}}},
+        {"thought": "done", "final": FINAL},
+    ])
+    inc = diagnose.create_incident(answer(), "Wrong: Growth since August.")
+    assert inc["fallback"] is False and inc["failure_type"] == "RESOLUTION"
+    tools_used = [s["tool"] for s in inc["investigation"]["steps"]]
+    assert tools_used == ["verdict_rejected", "verdict_rejected", "recall_whole_bank", "compare_records", "final"]
+
+
 def test_force_pipeline_flag(env, monkeypatch):
     monkeypatch.setattr(diagnose, "FORCE_PIPELINE", True)
     script(monkeypatch, [])

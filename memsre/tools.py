@@ -14,7 +14,7 @@ from .hs import Mem
 SIGNAL_PATTERNS = {
     "email_domain": re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)"),
     "email_address": re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"),
-    "phone": re.compile(r"\+?\d[\d -]{8,}\d"),
+    "phone": re.compile(r"(?<![\d-])(?:\+\d{1,3}[ -]?)?\d{5}[ -]?\d{5}(?![\d-])"),   # not dates like 2026-09-01
     "account_id": re.compile(r"\b[A-Z]{2,5}-\d{4,}\b"),
 }
 SIGNAL_TYPES = [*SIGNAL_PATTERNS, "keyword"]

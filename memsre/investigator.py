@@ -43,6 +43,7 @@ METHOD (general; adapt it to the case):
 FAILURE TYPES: RESOLUTION = the correct fact is stored under another record/name for the same customer; FRESHNESS = a newer fact under this customer superseded the recalled one; RECALL_MISS = the correct fact exists under this customer but was not recalled; EXECUTION = the correct memory was used and the answer is still wrong; MISSING_KNOWLEDGE = memory never had the correct fact; UNKNOWN = no memory-level cause.
 
 GUARDRAILS:
+- Gather evidence with tools before the verdict; a verdict the evidence cannot back is rejected.
 - Cite only memory ids shown to you by the case file or by tools.
 - culprit_ids come from MEMORIES THE AGENT USED: the memories the wrong claim follows from (together with the product catalog).
 - supporting_ids are memories that prove the correction; they may be filed under another customer's tag.
@@ -57,7 +58,13 @@ REACTIVE_FINAL = ('{"culprit_ids": ["<id>"], "wrong_claim": "<one sentence>", "c
 
 
 class _Protocol(Exception):
-    """The agent's reply broke the protocol; the message is sent back to it."""
+    """The agent's reply broke the protocol (bad JSON, unknown tool, bad args); the message is sent back to it.
+    Two in a row end the loop (fallback)."""
+
+
+class _Pushback(Exception):
+    """A well-formed verdict the gathered evidence cannot back. The agent is told why and keeps investigating;
+    this uses a turn but is not a protocol failure."""
 
 
 def _render_transcript(transcript: list[dict]) -> str:
@@ -66,6 +73,9 @@ def _render_transcript(transcript: list[dict]) -> str:
     for i, t in enumerate(transcript, 1):
         if "invalid" in t:
             out.append(f"TURN {i}: INVALID REPLY — {t['invalid']}. Reply with exactly one JSON object in the required format.")
+            continue
+        if "pushback" in t:
+            out.append(f"TURN {i}: VERDICT REJECTED — {t['pushback']}. Continue the investigation with a tool call.")
             continue
         seen_results += 1
         result = t["result"]
@@ -108,6 +118,11 @@ def run_loop(case: str, final_schema: str, ctx: tools.Ctx, validate_final, *, ma
             thought = str(reply.get("thought") or "")
             transcript.append({"thought": thought, "tool": tool.name, "args": args, "result": result})
             steps.append({"thought": thought, "tool": tool.name, "args": args, "result_summary": result[:600]})
+        except _Pushback as e:
+            failures = 0
+            transcript.append({"pushback": str(e)})
+            steps.append({"thought": str(reply.get("thought") or ""), "tool": "verdict_rejected", "args": {},
+                          "result_summary": str(e)[:300]})
         except (_Protocol, LLMError) as e:
             msg = str(e) if isinstance(e, _Protocol) else "the reply was not valid JSON"
             failures += 1
@@ -213,18 +228,18 @@ def _investigate_core(ans: AgentAnswer, correction: str, answer_format: str | No
         supporting = [i for i in _as_ids(f.get("supporting_ids")) if i in ctx.seen and i not in ans.used_memory_ids]
         searched_bank = any(t in ctx.used_tools for t in ("recall_whole_bank", "find_records_sharing"))
         if ftype in ("RESOLUTION", "FRESHNESS", "RECALL_MISS", "EXECUTION") and not supporting:
-            raise _Protocol(f"a {ftype} verdict needs supporting_ids: memories you were shown that prove the "
+            raise _Pushback(f"a {ftype} verdict needs supporting_ids: memories you were shown that prove the "
                             "correction. Find them first (they may be filed under another customer tag)")
         if ftype == "RESOLUTION" and "compare_records" not in ctx.used_tools:
-            raise _Protocol("a RESOLUTION verdict needs a compare_records check of the two customer records first")
+            raise _Pushback("a RESOLUTION verdict needs a compare_records check of the two customer records first")
         if ftype in ("MISSING_KNOWLEDGE", "UNKNOWN") and not searched_bank:
-            raise _Protocol(f"before concluding {ftype}, search the whole bank for the correct fact "
+            raise _Pushback(f"before concluding {ftype}, search the whole bank for the correct fact "
                             "(recall_whole_bank), since it may be filed under another customer name")
         own = set(store.customer_tags(key))
         foreign_seen = sorted({t for m in ctx.seen.values() for t in m.tags if t.startswith("customer:")} - own)
         checked = any(t in ctx.used_tools for t in ("compare_records", "find_records_sharing"))
         if ftype in ("MISSING_KNOWLEDGE", "UNKNOWN") and foreign_seen and not checked:
-            raise _Protocol(f"your searches returned records filed under other customer tags ({', '.join(foreign_seen[:5])}). "
+            raise _Pushback(f"your searches returned records filed under other customer tags ({', '.join(foreign_seen[:5])}). "
                             "Before concluding the fact is missing, rule out that the record stating the corrected fact "
                             "is this same customer under another name (find_records_sharing / compare_records)")
         return {**f, "failure_type": ftype}
