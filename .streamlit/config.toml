@@ -1,0 +1,45 @@
+# Memory SRE: native dark theme (Streamlit widgets). Custom visuals are styled in ui/theme.py.
+
+[client]
+toolbarMode = "minimal"
+showSidebarNavigation = false
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#5E5CE6"
+backgroundColor = "#06070A"
+secondaryBackgroundColor = "#12141C"
+codeBackgroundColor = "#0C0D12"
+codeTextColor = "#C9C8FF"
+textColor = "#ECEDEE"
+linkColor = "#8E8CFF"
+borderColor = "#1C1F2A"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "10px"
+buttonRadius = "10px"
+font = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@300..800&display=swap"
+headingFont = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@300..800&display=swap"
+codeFont = "'Geist Mono':https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400..600&display=swap"
+codeFontSize = "12.5px"
+baseFontSize = 14
+headingFontWeights = [650, 600, 600, 600, 600, 600]
+linkUnderline = false
+chartCategoricalColors = ["#8E8CFF", "#3DD68C", "#FF8B3E", "#3EA6FF", "#F0616D", "#FACC15", "#A1A7B3"]
+dataframeBorderColor = "#1C1F2A"
+dataframeHeaderBackgroundColor = "#0C0D12"
+redColor = "#F0616D"
+orangeColor = "#FF8B3E"
+yellowColor = "#FACC15"
+greenColor = "#3DD68C"
+blueColor = "#3EA6FF"
+violetColor = "#8E8CFF"
+grayColor = "#A1A7B3"
+
+[theme.sidebar]
+backgroundColor = "#08090D"
+secondaryBackgroundColor = "#12141C"
+borderColor = "#1C1F2A"
