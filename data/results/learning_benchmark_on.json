@@ -1,0 +1,148 @@
+{
+  "arm": "on",
+  "memory": true,
+  "main_bank": "memsre-bench-on",
+  "lessons_bank": "memsre-bench-on-lessons",
+  "episodes": [
+    {
+      "episode": 1,
+      "name": "Kestrel",
+      "customer": "kestrel",
+      "answer": "yes",
+      "correct": false,
+      "wrong_answers_reaching_customers": 1,
+      "prevented": false,
+      "investigation_steps": 8,
+      "llm_calls": 12,
+      "seconds": 285.9,
+      "handled_by": "reactive (INC-001)",
+      "incident_id": "INC-001",
+      "failure_type": "MISSING_KNOWLEDGE",
+      "verified": true,
+      "fallback": false,
+      "used_playbook_id": null,
+      "playbooks_shown": [],
+      "agent_path": [
+        "verdict_rejected",
+        "verdict_rejected",
+        "recall_customer",
+        "verdict_rejected",
+        "recall_whole_bank",
+        "recall_whole_bank",
+        "find_records_sharing",
+        "final"
+      ]
+    },
+    {
+      "episode": 2,
+      "name": "Saffron",
+      "customer": "saffron",
+      "answer": "no",
+      "correct": false,
+      "wrong_answers_reaching_customers": 1,
+      "prevented": false,
+      "investigation_steps": 6,
+      "llm_calls": 11,
+      "seconds": 287.8,
+      "handled_by": "reactive (INC-002)",
+      "incident_id": "INC-002",
+      "failure_type": "RESOLUTION",
+      "verified": true,
+      "fallback": false,
+      "used_playbook_id": null,
+      "playbooks_shown": [
+        "playbook-INC-001"
+      ],
+      "agent_path": [
+        "recall_customer",
+        "recall_whole_bank",
+        "find_records_sharing",
+        "verdict_rejected",
+        "compare_records",
+        "final"
+      ]
+    },
+    {
+      "episode": 3,
+      "name": "Monsoon",
+      "customer": "monsoon",
+      "answer": "starter",
+      "correct": true,
+      "wrong_answers_reaching_customers": 0,
+      "prevented": true,
+      "investigation_steps": 2,
+      "llm_calls": 4,
+      "seconds": 30.1,
+      "handled_by": "patrol (INC-005)"
+    },
+    {
+      "episode": 4,
+      "name": "Neelgiri",
+      "customer": "neelgiri",
+      "answer": "growth",
+      "correct": true,
+      "wrong_answers_reaching_customers": 0,
+      "prevented": true,
+      "investigation_steps": 2,
+      "llm_calls": 4,
+      "seconds": 48.8,
+      "handled_by": "patrol (INC-004)"
+    }
+  ],
+  "patrols": [
+    {
+      "after_episode": 1,
+      "checks": 0,
+      "candidates": 0,
+      "llm_calls": 0,
+      "seconds": 1.5,
+      "findings": []
+    },
+    {
+      "after_episode": 2,
+      "checks": 12,
+      "candidates": 3,
+      "llm_calls": 9,
+      "seconds": 170.5,
+      "findings": [
+        {
+          "a": "kestrel",
+          "b": "anvaya",
+          "shared_domain": "anvaya.in",
+          "confidence": 0.98,
+          "status": "prevented",
+          "incident_id": "INC-003"
+        },
+        {
+          "a": "neelgiri",
+          "b": "kaveri-agro",
+          "shared_domain": "kaveriagro.co.in",
+          "confidence": 0.97,
+          "status": "prevented",
+          "incident_id": "INC-004"
+        },
+        {
+          "a": "monsoon",
+          "b": "ruparel",
+          "shared_domain": "ruparelholidays.in",
+          "confidence": 0.95,
+          "status": "prevented",
+          "incident_id": "INC-005"
+        }
+      ]
+    }
+  ],
+  "rules_learned": [
+    "rule-INC-002"
+  ],
+  "false_links": [],
+  "totals": {
+    "wrong_answers_reaching_customers": 2,
+    "prevented": 2,
+    "investigation_steps": 18,
+    "llm_calls": 34,
+    "llm_api_calls": 33,
+    "llm_cache_hits": 1,
+    "seconds": 958.3
+  }
+}

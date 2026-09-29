@@ -36,6 +36,7 @@ _clients: dict[str, OpenAI] = {}
 _usage: dict[str, deque] = {}        # key -> deque[(monotonic time, estimated tokens)]
 _last_call: dict[str, float] = {}    # key -> monotonic time of the last call
 _dropped_params: set[str] = set()    # params the API rejected; remembered for the process
+STATS = {"calls": 0, "api": 0, "cache": 0}   # llm_json calls in this process (the learning benchmark reads it)
 _cooldown: dict[str, float] = {}     # key -> monotonic time until which a 429 says it is rate-limited
 _next_key = 0
 
@@ -221,6 +222,8 @@ def llm_json(system: str, user: str, *, max_completion_tokens: int = 1200) -> di
     ).hexdigest()
     with _lock:
         hit = _load_cache().get(cache_key)
+        STATS["calls"] += 1
+        STATS["cache" if hit is not None else "api"] += 1
     if hit is not None:
         _log("cache", user, start)
         return copy.deepcopy(hit)
