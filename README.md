@@ -2,6 +2,10 @@
 
 **Memory SRE — find the memory that made your agent wrong, and fix it. Built on Hindsight.**
 
+▶️ **Demo video (4½ min):** https://youtu.be/hy_POWDusEw
+
+[![Watch the demo](https://img.youtube.com/vi/hy_POWDusEw/maxresdefault.jpg)](https://youtu.be/hy_POWDusEw)
+
 ![Support-agent accuracy before and after Memory SRE](docs/before_after.png)
 
 On the 20-question support evaluation, the agent's accuracy went from **60% to 100%**. Two incidents, both classified RESOLUTION, fixed all 8 wrong answers: Kestrel Logistics ≡ Anvaya Technologies Pvt Ltd, and Saffron Retail ≡ Mehta Brothers Trading LLP. Source: [`data/results/eval_latest.json`](data/results/eval_latest.json).
