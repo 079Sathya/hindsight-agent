@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from memsre import diagnose, hs, investigator, store  # noqa: E402
+from memsre import diagnose, hs, investigator, store, tools  # noqa: E402
 from memsre.agent import AgentAnswer  # noqa: E402
 from memsre.hs import Mem  # noqa: E402
 from memsre.llm import LLMError  # noqa: E402
@@ -160,6 +160,45 @@ def test_a_lead_from_find_records_sharing_must_be_followed(env, monkeypatch):
     steps = inc["investigation"]["steps"]
     assert steps[2]["tool"] == "verdict_rejected" and "customer:anvaya" in steps[2]["result_summary"]
     assert inc["failure_type"] == "RESOLUTION" and inc["fallback"] is False
+
+
+def test_case_file_lists_own_identifiers_and_each_turn_shows_open_leads(env, monkeypatch):
+    # The agent searches with the customer's real identifiers (not guesses) and sees its unfollowed leads.
+    admin = Mem(id="k9", text="Kestrel admin contact is ravi.k@anvaya.in, phone +91 98450 12345.", date="2026-05-01",
+                tags=["customer:kestrel"], source="crm_notes")
+    monkeypatch.setattr(hs, "recall", lambda bank, query, tags=None, **k: [admin] if tags else [FOREIGN])
+    shared = [{"id": "k9", "fact_type": "world", "text": admin.text, "tags": ["customer:kestrel"]},
+              {"id": "f1", "fact_type": "world", "text": FOREIGN.text + " accounts@anvaya.in", "tags": ["customer:anvaya"]}]
+    monkeypatch.setattr(hs, "list_memories", lambda *a, **k: shared)
+    prompts = []
+    replies = iter([
+        {"thought": "search the domain", "action": {"tool": "find_records_sharing",
+                                                    "args": {"signal_type": "email_domain", "value": "anvaya.in"}}},
+        {"thought": "follow the lead", "action": {"tool": "compare_records", "args": {"tag_a": "kestrel", "tag_b": "anvaya"}}},
+        {"thought": "done", "final": FINAL},
+    ])
+    monkeypatch.setattr(investigator, "llm_json", lambda system, user, **kw: prompts.append(user) or next(replies))
+    inc = diagnose.create_incident(answer(), "Wrong: Growth since August.")
+    assert inc["failure_type"] == "RESOLUTION" and inc["fallback"] is False
+    assert "- email_domain: anvaya.in" in prompts[0] and "ravi.k@anvaya.in" in prompts[0] and "- phone: 9845012345" in prompts[0]
+    assert "TURNS LEFT: 10" in prompts[0] and "OPEN LEADS" not in prompts[0]
+    assert "TURNS LEFT: 9" in prompts[1] and "OPEN LEADS" in prompts[1] and "customer:anvaya" in prompts[1].split("OPEN LEADS")[1]
+    assert "OPEN LEADS" not in prompts[2]                                          # the lead was followed
+    assert inc["investigation"]["identifiers"]["email_domain"] == ["anvaya.in"]
+
+
+def test_phone_search_matches_any_formatting(env, monkeypatch):
+    queries = []
+    rows = [{"id": "p1", "fact_type": "world", "text": "Call Kestrel ops on +91 98450 12345.", "tags": ["customer:kestrel"]},
+            {"id": "p2", "fact_type": "world", "text": "Anvaya billing: 98450-12345.", "tags": ["customer:anvaya"]},
+            {"id": "p3", "fact_type": "world", "text": "Other line 98450 99999, ref 12345.", "tags": ["customer:other"]}]
+    monkeypatch.setattr(hs, "list_memories", lambda *a, q=None, **k: queries.append(q) or rows)
+    ctx = tools.Ctx(customer_key="kestrel", memory=False)
+    out = tools.find_records_sharing(ctx, "phone", "+91-98450-12345")
+    assert queries == ["12345"] and "customer:kestrel" in out and "customer:anvaya" in out and "customer:other" not in out
+    assert ctx.leads == {"customer:anvaya"}
+    with pytest.raises(tools.ToolError):
+        tools.find_records_sharing(ctx, "phone", "12-34")
 
 
 def test_force_pipeline_flag(env, monkeypatch):

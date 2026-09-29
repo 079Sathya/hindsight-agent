@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import time
 
-from . import catalog, config, diagnose, store, tools
+from . import catalog, config, diagnose, hs, store, tools
 from .agent import AgentAnswer, memory_line
 from .llm import LLMError, llm_json
 
@@ -106,6 +106,19 @@ def _render_transcript(transcript: list[dict]) -> str:
     return "\n\n".join(out)
 
 
+def _working_memory(ctx: tools.Ctx, turns_left: int) -> str:
+    """The agent's scratchpad, restated every turn: leads it has not followed up yet, and its remaining budget."""
+    lines = [f"\n\nTURNS LEFT: {turns_left}"]
+    if ctx.customer_key and ctx.leads:
+        key = ctx.customer_key
+        compared = {b for (a, b) in ctx.compares if a == key} | {a for (a, b) in ctx.compares if b == key}
+        open_leads = sorted(t for t in ctx.leads if t.split(":", 1)[1] not in compared)
+        if open_leads:
+            lines.append("OPEN LEADS (records that share a concrete signal with this customer, not yet checked with "
+                         f"compare_records): {', '.join(open_leads)}")
+    return "\n".join(lines)
+
+
 def run_loop(case: str, final_schema: str, ctx: tools.Ctx, validate_final, *, max_steps: int = MAX_STEPS,
              system_template: str = SYSTEM) -> dict:
     """Drive the JSON-action loop. Returns {final | None, steps, llm_calls, corrections, fallback_reason}."""
@@ -114,8 +127,9 @@ def run_loop(case: str, final_schema: str, ctx: tools.Ctx, validate_final, *, ma
     transcript: list[dict] = []
     steps, llm_calls, corrections, failures = [], 0, 0, 0
     final, fallback_reason = None, None
-    for _turn in range(max_steps):
-        user = case + "\n\nSTEPS SO FAR:\n" + (_render_transcript(transcript) or "(none yet)") + "\n\nYour next JSON object:"
+    for turn in range(max_steps):
+        user = (case + "\n\nSTEPS SO FAR:\n" + (_render_transcript(transcript) or "(none yet)")
+                + _working_memory(ctx, max_steps - turn) + "\n\nYour next JSON object:")
         try:
             llm_calls += 1
             reply = llm_json(system, user, max_completion_tokens=STEP_TOKENS)
@@ -226,6 +240,15 @@ def _investigate_core(ans: AgentAnswer, correction: str, answer_format: str | No
     for m in ans.used_memories:
         ctx.seen[m.id] = m
     guidance, playbook_ids, rule_ids = _guidance(ctx, f"{ans.question} {correction}")
+    # Perception: the concrete identifiers in this customer's own records, so the agent searches with real
+    # signals instead of guessing them. What to search, and whether to compare, stays the agent's decision.
+    try:
+        contact_mems = hs.recall(config.MAIN_BANK_ID, f"{catalog.customer_name(key)}: contact email phone account admin billing",
+                                 tags=store.customer_tags(key), max_tokens=1000)
+    except Exception:
+        contact_mems = []
+    ids = tools.identifiers_in([m.text for m in list(ans.shown_memories) + contact_mems])
+    id_lines = "\n".join(f"- {signal}: {', '.join(values)}" for signal, values in ids.items()) or "(none found)"
     case = "\n".join([
         "CASE",
         f"Customer: {catalog.customer_name(key)} (tags: {', '.join(store.customer_tags(key))})",
@@ -234,6 +257,8 @@ def _investigate_core(ans: AgentAnswer, correction: str, answer_format: str | No
         f"Correction from the support rep: {correction}",
         "MEMORIES THE AGENT USED:",
         "\n".join(memory_line(m) for m in ans.used_memories) or "(none)",
+        "IDENTIFIERS IN THIS CUSTOMER'S OWN RECORDS (concrete signals you can search with find_records_sharing):",
+        id_lines,
         "PRODUCT CATALOG:",
         catalog.catalog_text(),
     ] + ([guidance] if guidance else []) + ([extra_context] if extra_context else []))
@@ -289,6 +314,7 @@ def _investigate_core(ans: AgentAnswer, correction: str, answer_format: str | No
         "used_playbook_id": claimed if claimed in playbook_ids else None,
         "playbooks_shown": playbook_ids,
         "used_rules": rule_ids,
+        "identifiers": ids,
         "agent_failure_type": (final or {}).get("failure_type"),
         "confidence": _confidence((final or {}).get("confidence")),
         "fallback": final is None,

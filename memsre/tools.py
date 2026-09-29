@@ -57,8 +57,23 @@ def extract_signals(text: str, signal_type: str) -> set[str]:
         return set()
     values = {(m.group(1) if rx.groups else m.group(0)) for m in rx.finditer(text or "")}
     if signal_type == "phone":
-        values = {re.sub(r"\D", "", v) for v in values}
+        values = {phone_key(v) for v in values}
     return {v.lower().rstrip(".") for v in values if v}
+
+
+def phone_key(value: str) -> str:
+    """One form for every phone formatting: the last 10 digits, so +91 98450 12345 == 98450-12345."""
+    return re.sub(r"\D", "", value)[-10:]
+
+
+def identifiers_in(texts: list[str]) -> dict[str, list[str]]:
+    """Every concrete signal (email domains, addresses, phones, account ids) found in the texts."""
+    out = {}
+    for signal in SIGNAL_PATTERNS:
+        values = sorted(set().union(*[extract_signals(t, signal) for t in texts] or [set()]))
+        if values:
+            out[signal] = values
+    return out
 
 
 def customer_key(ref: str) -> str:
@@ -139,10 +154,16 @@ def find_records_sharing(ctx: Ctx, signal_type: str, value: str) -> str:
     if signal_type not in SIGNAL_TYPES:
         raise ToolError(f"signal_type must be one of {', '.join(SIGNAL_TYPES)}")
     value = value.strip().lower().lstrip("@")
+    if signal_type == "phone":
+        value = phone_key(value)
+        if len(value) < 7:
+            raise ToolError("value must be a full phone number")
     if value in ctx.rejected_values:
         return (f"REJECTED PATTERN: a human reviewer rejected {signal_type} '{value}' as linking evidence. "
                 "Do not use it to link records.")
-    hits = [_mem_from_item(d) for d in hs.list_memories(config.MAIN_BANK_ID, q=value, limit=60)
+    # Text search, then an exact signal match. A phone's last 5 digits are contiguous in every accepted format.
+    q = value[-5:] if signal_type == "phone" else value
+    hits = [_mem_from_item(d) for d in hs.list_memories(config.MAIN_BANK_ID, q=q, limit=60)
             if d.get("fact_type") in ("world", "experience")]
     if signal_type != "keyword":
         hits = [m for m in hits if value in extract_signals(m.text, signal_type)]
